@@ -187,6 +187,9 @@ p {
 .cards-panel { padding: 20px; margin-bottom: 16px; }
 .seat-grid, .card-player-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:12px; margin-top:14px; }
 .seat-grid label, .card-add label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
+.card-wonder-setup { display:grid; grid-template-columns:1.3fr .8fr .7fr; gap:8px; margin-top:12px; }
+.card-wonder-setup label { display:grid; gap:6px; font-size:12px; color:var(--muted); }
+.card-science-count { display:block; margin-top:8px; }
 .card-add { display:grid; grid-template-columns:1fr 1.5fr auto; align-items:end; gap:8px; margin:14px 0; }
 .card-add button { padding:9px; }
 .selected-cards { list-style:none; margin:0; padding:0; max-height:210px; overflow:auto; }
@@ -486,7 +489,7 @@ main {
 }
 .score-panel:not(.card-mode-score-panel) .category-symbol { font-size:0; }
 .score-panel:not(.card-mode-score-panel) .category-symbol::before { content:"◆"; font-size:18px; }
-.score-panel:not(.card-mode-score-panel) .science-symbol::before { content:"✳"; }
+.score-panel:not(.card-mode-score-panel) .science-symbol::before { content:"\2733"; font-size:18px; }
 .card-mode-score-panel .category-symbol { font-size:0; }
 .card-mode-score-panel .category-symbol::before { content:"◆"; font-size:18px; }
 .card-mode-score-panel tbody tr:nth-child(2) .category-symbol::before { content:"●"; }

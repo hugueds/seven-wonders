@@ -17,6 +17,9 @@ import {
   type Field,
   cardCatalog,
   cardTotals,
+  wonderBonus,
+  wonderStageLimit,
+  withWonderScoring,
   type Card,
 } from "./game";
 import "./styles.css";
@@ -52,7 +55,7 @@ const categories: { key: Field; label: string; hint: string; color: string }[] =
     {
       key: "coins",
       label: "Coins",
-      hint: "Enter coins â€¢ every 3 coins = 1 point",
+      hint: "Enter coins apart from Wonder stage rewards",
       color: "#ac852b",
     },
     {
@@ -141,10 +144,21 @@ function PlayerMark({ p }: { p: Player }) {
     </span>
   );
 }
+function scoredPlayer(game: Game, p: Player): Player {
+  if (!Object.prototype.hasOwnProperty.call(game.wonderStages ?? {}, p.id) && game.mode !== "cards") return p;
+  const stages = game.wonderStages?.[p.id] ?? 0;
+  const wonder = wonderBonus(p.city, p.side, stages);
+  if (game.mode === "cards") {
+    const totals = cardTotals(game)[p.id];
+    return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military + totals.military, coins: totals.coins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
+  }
+  return withWonderScoring(p, stages);
+}
 function Results({ game }: { game: Game }) {
+  const scoringPlayers = game.players.map((p) => scoredPlayer(game, p));
   return (
     <div className="results-list">
-      {standings(game.players).map(({ player: p, rank, winner }) => (
+      {standings(scoringPlayers).map(({ player: p, rank, winner }) => (
         <div className={`result ${winner ? "winning" : ""}`} key={p.id}>
           <span className="rank">{rank.toString().padStart(2, "0")}</span>
           <PlayerMark p={p} />
@@ -157,7 +171,7 @@ function Results({ game }: { game: Game }) {
             </small>
           </div>
                   <strong className="result-total">
-            {game.mode === "cards" ? p.wonder + (cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].civilian + (cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].commercial + (cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].guild + (cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].military + p.military + (cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].scientific + Math.floor((cardTotals(game) as Record<string,{civilian:number;commercial:number;guild:number;military:number;scientific:number;coins:number}>)[p.id].coins/3) : score(p).total}
+            {score(p).total}
             <small>points</small>
           </strong>
         </div>
@@ -251,7 +265,8 @@ function Rules() {
   );
 }
 function Breakdown({ game }: { game: Game }) {
-  const automatic = cardTotals(game) as Record<string, { civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }>;
+  const automatic = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }>;
+  const scoringPlayers = game.players.map((p) => scoredPlayer(game, p));
   return (
     <div className="table-scroll">
       <table className="breakdown">
@@ -273,7 +288,7 @@ function Breakdown({ game }: { game: Game }) {
               </th>
               {game.players.map((p) => (
                 <td key={p.id}>
-                  {c.key === "coins" ? (game.mode === "cards" ? Math.floor(automatic[p.id].coins/3) : score(p).treasury) : game.mode === "cards" && ["civilian","commercial","guild","military"].includes(c.key) ? automatic[p.id][c.key as "civilian"|"commercial"|"guild"|"military"] : p[c.key]}
+                  {c.key === "coins" ? score(scoringPlayers.find((x) => x.id === p.id)!).treasury : c.key === "wonder" ? automatic[p.id].wonder : c.key === "military" ? scoringPlayers.find((x) => x.id === p.id)!.military : game.mode === "cards" && ["civilian","commercial","guild"].includes(c.key) ? automatic[p.id][c.key as "civilian"|"commercial"|"guild"] : p[c.key]}
                 </td>
               ))}
             </tr>
@@ -281,27 +296,27 @@ function Breakdown({ game }: { game: Game }) {
           <tr>
             <th>Science</th>
             {game.players.map((p) => (
-              <td key={p.id}>{game.mode === "cards" ? automatic[p.id].scientific : score(p).scientific}</td>
+              <td key={p.id}>{score(scoringPlayers.find((x) => x.id === p.id)!).scientific}</td>
             ))}
           </tr>
           {categories.slice(-1).map((c) => (
             <tr key={c.key}>
               <th>{c.label}</th>
               {game.players.map((p) => (
-                <td key={p.id}>{p[c.key]}</td>
+              <td key={p.id}>{game.mode === "cards" ? automatic[p.id].guild : p[c.key]}</td>
               ))}
             </tr>
           ))}
           <tr>
             <th>Coins remaining</th>
             {game.players.map((p) => (
-              <td key={p.id}>{p.coins}</td>
+              <td key={p.id}>{scoringPlayers.find((x) => x.id === p.id)!.coins}</td>
             ))}
           </tr>
           <tr className="total-row">
             <th>Total</th>
             {game.players.map((p) => (
-              <td key={p.id}>{game.mode === "cards" ? p.wonder + automatic[p.id].civilian + automatic[p.id].commercial + automatic[p.id].guild + automatic[p.id].military + p.military + automatic[p.id].scientific + Math.floor(automatic[p.id].coins/3) : score(p).total}</td>
+              <td key={p.id}>{score(scoringPlayers.find((x) => x.id === p.id)!).total}</td>
             ))}
           </tr>
         </tbody>
@@ -309,16 +324,16 @@ function Breakdown({ game }: { game: Game }) {
     </div>
   );
 }
-function CardModeScoreboard({ game, update }: { game: Game; update: (id: string, patch: Partial<Player>) => void }) {
-  const totals = cardTotals(game) as Record<string, { civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
-  return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption>Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Calculated fields update from selected cards.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><input className="name-input" aria-label={`Name for ${p.name}`} maxLength={30} value={p.name} onChange={e=>update(p.id,{name:e.target.value})} onBlur={()=>{if(!p.name.trim())update(p.id,{name:`Player ${game.players.indexOf(p)+1}`})}}/><select aria-label={`Wonder for ${p.name}`} value={p.city} onChange={e=>update(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select><select className="side-select" aria-label={`Wonder side for ${p.name}`} value={p.side} onChange={e=>update(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></th>)}</tr></thead><tbody>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Points from completed stages</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.wonder} label={`${p.name}: Wonder points`} onChange={n=>update(p.id,{wonder:n})}/></td>)}</tr>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Every 3 coins = 1 point</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].coins/3)} points</small></td>)}</tr>
+function CardModeScoreboard({ game, update, updateStages, updateWonder }: { game: Game; update: (id: string, patch: Partial<Player>) => void; updateStages: (id: string, stages: number) => void; updateWonder: (id: string, patch: Partial<Player>) => void }) {
+  const totals = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
+  return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption>Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Card and Wonder scoring effects update automatically.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><input className="name-input" aria-label={`Name for ${p.name}`} maxLength={30} value={p.name} onChange={e=>update(p.id,{name:e.target.value})} onBlur={()=>{if(!p.name.trim())update(p.id,{name:`Player ${game.players.indexOf(p)+1}`})}}/><select aria-label={`Wonder for ${p.name}`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select><select className="side-select" aria-label={`Wonder side for ${p.name}`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></th>)}</tr></thead><tbody>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Points and scoreable stage effects</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={game.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/><small className="calculated">{totals[p.id].wonder} points from stages</small></td>)}</tr>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].coins/3)} points</small></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#ae4d45"}} aria-hidden="true">✕</span>Military<small>Card shields plus conflict tokens</small></th>{game.players.map(p=><td key={p.id}><small className="calculated">{totals[p.id].military} card shields</small><NumberInput value={p.military} min={-100} label={`${p.name}: Conflict tokens`} onChange={n=>update(p.id,{military:n})}/></td>)}</tr>
     {([["Civilian","civilian","#3d739f","▮"],["Commercial","commercial","#ab851e","●"]] as const).map(([label,key,color,symbol])=><tr key={key}><th scope="row"><span className="category-symbol" style={{color}} aria-hidden="true">{symbol}</span>{label}<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></td>)}</tr>)}
     <tr className="science-row"><th scope="row"><span className="category-symbol science-symbol" aria-hidden="true">✳</span>Science<small>Symbols from cards and Wonder</small></th>{game.players.map(p=><td key={p.id}><div className="science-inputs">{([["Compass","compass"],["Tablet","tablet"],["Gear","gear"],["Wild","wildcards"]] as const).map(([label,key])=><label key={key}><span>{label}</span><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></label>)}</div><strong className="science-points">{totals[p.id].scientific} <small>points</small></strong></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#876594"}} aria-hidden="true">?</span>Guilds<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id].guild} label={`${p.name}: Guilds`} readOnly onChange={()=>{}}/></td>)}</tr>
-    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{p.wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+totals[p.id].military+p.military+totals[p.id].scientific+Math.floor(totals[p.id].coins/3)}</strong></td>)}</tr>
+    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+totals[p.id].military+p.military+totals[p.id].scientific+Math.floor(totals[p.id].coins/3)}</strong></td>)}</tr>
     </tbody></table></div></section>;
 }
 function App() {
@@ -360,14 +375,14 @@ function App() {
     }
   }, [tab]);
   const active = state.active;
-  const automatic = active ? cardTotals(active) as Record<string, { civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }> : {};
+  const automatic = active ? cardTotals(active) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }> : {};
   function start(players = Array.from({ length: count }, (_, i) => player(i))) {
     setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players } }));
     setTab("Scoreboard");
   }
   function startCardMode() {
     const players = Array.from({ length: count }, (_, i) => player(i));
-    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players, mode: "cards", seats: players.map((p) => p.id), cards: {}, wonderStages: {}, wonderScience: Object.fromEntries(players.map((p) => [p.id, false])), wonderShields: {} } }));
+    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players, mode: "cards", seats: players.map((p) => p.id), cards: {}, wonderStages: {} } }));
     setTab("Cards");
   }
   function update(id: string, patch: Partial<Player>) {
@@ -382,6 +397,26 @@ function App() {
           }
         : null,
     }));
+  }
+  function updateStages(id: string, stages: number) {
+    setState((s) => ({ ...s, active: s.active ? { ...s.active, wonderStages: { ...s.active.wonderStages, [id]: stages } } : null }));
+  }
+  function updateWonder(id: string, patch: Partial<Player>) {
+    setState((s) => {
+      if (!s.active) return s;
+      const current = s.active.players.find((p) => p.id === id);
+      if (!current) return s;
+      const next = { ...current, ...patch };
+      const stages = Math.min(s.active.wonderStages?.[id] ?? 0, wonderStageLimit(next.city, next.side));
+      return {
+        ...s,
+        active: {
+          ...s.active,
+          players: s.active.players.map((p) => p.id === id ? next : p),
+          wonderStages: { ...s.active.wonderStages, [id]: stages },
+        },
+      };
+    });
   }
   function confirm(title: string, text: string, action: () => void) {
     setDialog({ title, text, action });
@@ -454,7 +489,7 @@ function App() {
               className={tab === page || (t === "Card mode" && tab === "Card scoreboard") ? "active" : ""}
               onClick={() => {
                 if (t === "Manual mode") setState(s=>({...s,active:s.active?{...s.active,mode:"manual"}:null}));
-                if (t === "Card mode") setState(s=>({...s,active:s.active?{...s.active,mode:"cards",wonderScience:Object.fromEntries(s.active.players.map(p=>[p.id,s.active?.wonderScience?.[p.id] ?? false]))}:null}));
+                if (t === "Card mode") setState(s=>({...s,active:s.active?{...s.active,mode:"cards"}:null}));
                 setTab(page);
               }}
             >
@@ -639,7 +674,7 @@ function App() {
                                 aria-label={`Wonder for ${p.name}`}
                                 value={p.city}
                                 onChange={(e) =>
-                                  update(p.id, { city: e.target.value })
+                                  updateWonder(p.id, { city: e.target.value })
                                 }
                               >
                                 <option value="">Choose a Wonder</option>
@@ -652,7 +687,7 @@ function App() {
                                 aria-label={`Wonder side for ${p.name}`}
                                 value={p.side}
                                 onChange={(e) =>
-                                  update(p.id, {
+                                  updateWonder(p.id, {
                                     side: e.target.value as Player["side"],
                                   })
                                 }
@@ -682,7 +717,19 @@ function App() {
                             </th>
                             {active.players.map((p) => (
                               <td key={p.id}>
-                                {active.mode === "cards" && c.key === "military" ? (
+                                {c.key === "wonder" ? (
+                                  <>
+                                    <NumberInput
+                                      value={active.wonderStages?.[p.id] ?? 0}
+                                      max={wonderStageLimit(p.city, p.side)}
+                                      label={`${p.name}: Wonder stages built`}
+                                      onChange={(n) => updateStages(p.id, n)}
+                                    />
+                                    <small className="calculated">
+                                      {(Object.prototype.hasOwnProperty.call(active.wonderStages ?? {}, p.id) ? wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).points : p.wonder)} Wonder points
+                                    </small>
+                                  </>
+                                ) : active.mode === "cards" && c.key === "military" ? (
                                   <div className="military-card-score">
                                     <span>{automatic[p.id].military} card shields</span>
                                     <NumberInput value={p.military} min={-100} label={`${p.name}: conflict tokens`} onChange={(n) => update(p.id, { military: n })} />
@@ -699,8 +746,11 @@ function App() {
                                 )}
                                 {c.key === "coins" && (
                                   <small className="calculated">
-                                    = {active.mode === "cards" ? Math.floor(automatic[p.id].coins/3) : score(p).treasury} points
+                                    = {active.mode === "cards" ? Math.floor(automatic[p.id].coins/3) : score(scoredPlayer(active,p)).treasury} points
                                   </small>
+                                )}
+                                {c.key === "military" && active.mode !== "cards" && wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).shields > 0 && (
+                                  <small className="calculated">+{wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).shields} Wonder shields</small>
                                 )}
                               </td>
                             ))}
@@ -728,7 +778,7 @@ function App() {
                               p.compass,
                               p.tablet,
                               p.gear,
-                              p.wildcards,
+                              p.wildcards + wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).wildcards,
                             );
                             return (
                               <td key={p.id}>
@@ -767,7 +817,9 @@ function App() {
                                 <small className="calculated">
                                   {best.counts.map((n) => `${n}Â²`).join(" + ")}{" "}
                                   + {best.sets} × 7
-                                </small>
+                                </small>                                {active.mode !== "cards" && wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).wildcards > 0 && (
+                                  <small className="calculated">Includes {wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).wildcards} Wonder science wildcard</small>
+                                )}
                               </td>
                             );
                           })}
@@ -805,7 +857,7 @@ function App() {
                           </th>
                           {active.players.map((p) => (
                             <td key={p.id}>
-                              <strong>{active.mode === "cards" ? p.wonder + automatic[p.id].civilian + automatic[p.id].commercial + automatic[p.id].guild + automatic[p.id].military + p.military + automatic[p.id].scientific + Math.floor(automatic[p.id].coins/3) : score(p).total}</strong>
+                              <strong>{score(scoredPlayer(active,p)).total}</strong>
                             </td>
                           ))}
                         </tr>
@@ -842,8 +894,8 @@ function App() {
             <div className="toolbar"><div>Seating order is clockwise, wrapping at the ends.</div></div>
             <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">Â· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
             <section className="panel cards-panel"><h2>Seat order</h2><div className="seat-grid">{active.players.map((p,i)=><label key={p.id}>{p.name}<select value={(active.seats??active.players.map(x=>x.id))[i]} onChange={e=>setState(s=>{if(!s.active)return s;const seats=[...(s.active.seats??s.active.players.map(x=>x.id))];const j=seats.indexOf(e.target.value);[seats[i],seats[j]]=[seats[j],seats[i]];return {...s,active:{...s.active,seats}}})}>{(active.seats??active.players.map(x=>x.id)).map(id=><option key={id} value={id}>{active.players.find(x=>x.id===id)?.name}</option>)}</select></label>)}</div></section>
-            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const usedCardIds=new Set(Object.values(active.cards??{}).flat().map(card=>card.id));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className="panel cards-panel" key={p.id} style={{borderTop:`3px solid ${p.color}`}}><h2>{p.name}</h2><div className="card-add"><label>Card<select id={`card-${p.id}`} defaultValue=""><option value="" disabled>Select a card</option>{types.map(type=><optgroup key={type} label={{brown:"Brown Â· Raw materials",gray:"Gray Â· Manufactured goods",blue:"Blue Â· Civilian",red:"Red Â· Military",green:"Green Â· Science",yellow:"Yellow Â· Commercial",purple:"Purple Â· Guilds"}[type]??type}>{cardCatalog.filter(c=>c.color===type&&!usedCardIds.has(c.id)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button onClick={()=>{const card=cardCatalog.find(c=>c.id===(document.getElementById(`card-${p.id}`) as HTMLSelectElement).value);if(card&&!usedCardIds.has(card.id))setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),card]}}:null}))}}>Add card</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><label className="stage-count">Wonder stages built <NumberInput value={active.wonderStages?.[p.id]??0} max={10} label={`${p.name}: Wonder stages built`} onChange={n=>setState(s=>({...s,active:s.active?{...s.active,wonderStages:{...s.active.wonderStages,[p.id]:n}}:null}))}/></label><label className="stage-count">Wonder shield bonus <NumberInput value={active.wonderShields?.[p.id]??0} max={20} label={`${p.name}: Wonder shield bonus`} onChange={n=>setState(s=>({...s,active:s.active?{...s.active,wonderShields:{...s.active.wonderShields,[p.id]:n}}:null}))}/></label><div className="wonder-science-toggle"><span>Wonder science symbol</span><button type="button" aria-pressed={!!active.wonderScience?.[p.id]} className={active.wonderScience?.[p.id] ? "chosen" : ""} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,wonderScience:{...s.active.wonderScience,[p.id]:!s.active.wonderScience?.[p.id]}}:null}))}>{active.wonderScience?.[p.id] ? "On" : "Off"}</button></div><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div></section>})}</div>
-            <CardModeScoreboard game={active} update={update}/>
+            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const usedCardIds=new Set(Object.values(active.cards??{}).flat().map(card=>card.id));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className="panel cards-panel" key={p.id} style={{borderTop:`3px solid ${p.color}`}}><h2>{p.name}</h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label>Card<select id={`card-${p.id}`} defaultValue=""><option value="" disabled>Select a card</option>{types.map(type=><optgroup key={type} label={{brown:"Brown · Raw materials",gray:"Gray · Manufactured goods",blue:"Blue · Civilian",red:"Red · Military",green:"Green · Science",yellow:"Yellow · Commercial",purple:"Purple · Guilds"}[type]??type}>{cardCatalog.filter(c=>c.color===type&&!usedCardIds.has(c.id)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button onClick={()=>{const card=cardCatalog.find(c=>c.id===(document.getElementById(`card-${p.id}`) as HTMLSelectElement).value);if(card&&!usedCardIds.has(card.id))setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),card]}}:null}))}}>Add card</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
+            <CardModeScoreboard game={active} update={update} updateStages={updateStages} updateWonder={updateWonder}/>
           </>
         )}
         {tab === "History" && (
@@ -864,7 +916,10 @@ function App() {
             {!state.history.length ? (
               <div className="panel empty">
                 <span className="empty-icon" aria-hidden="true">
-                  â™œ
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v16H6.5A2.5 2.5 0 0 0 4 21z" />
+                    <path d="M4 5.5v13A2.5 2.5 0 0 1 6.5 16H20M8 7h8M8 10h6" />
+                  </svg>
                 </span>
                 <h2>Your first legacy awaits.</h2>
                 <p>Finish a game on the Scoreboard to save its results here.</p>
@@ -879,7 +934,7 @@ function App() {
               <div className="history-layout">
                 <aside className="history-list">
                   {state.history.map((g) => {
-                    const winners = standings(g.players).filter(
+                    const winners = standings(g.players.map((p) => scoredPlayer(g, p))).filter(
                       (r) => r.winner,
                     );
                     return (

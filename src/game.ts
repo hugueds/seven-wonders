@@ -21,6 +21,24 @@ export function wonderStageLimit(city: string, side: Player["side"]) {
   if (side === "Night" && ["Babylon", "Rhodes"].includes(city)) return 2;
   return 3;
 }
+export type WonderBonus = { points: number; coins: number; shields: number; wildcards: number };
+type WonderStage = Partial<WonderBonus>;
+const wonderStages: Record<string, Record<Player["side"], WonderStage[]>> = {
+  Alexandria: { Day: [{points:3},{},{points:7}], Night: [{},{},{points:7}] },
+  Babylon: { Day: [{points:3},{wildcards:1},{points:7}], Night: [{},{wildcards:1}] },
+  Ephesus: { Day: [{points:3},{coins:9},{points:7}], Night: [{points:2,coins:4},{points:3,coins:4},{points:5,coins:4}] },
+  Giza: { Day: [{points:3},{points:5},{points:7}], Night: [{points:3},{points:5},{points:5},{points:7}] },
+  Halicarnassus: { Day: [{points:3},{},{points:7}], Night: [{points:2},{points:1},{}] },
+  Olympia: { Day: [{points:3},{},{points:7}], Night: [{points:2},{points:3},{points:5}] },
+  Rhodes: { Day: [{shields:3},{shields:2},{points:7}], Night: [{points:3,coins:3,shields:1},{points:4,coins:4,shields:1}] },
+};
+export function wonderBonus(city: string, side: Player["side"], builtStages: number): WonderBonus {
+  const built = wonderStages[city]?.[side] ?? [];
+  return built.slice(0, Math.max(0, Math.min(builtStages, built.length))).reduce<WonderBonus>(
+    (sum, stage) => ({ points: sum.points+(stage.points??0), coins: sum.coins+(stage.coins??0), shields: sum.shields+(stage.shields??0), wildcards: sum.wildcards+(stage.wildcards??0) }),
+    { points: 0, coins: 0, shields: 0, wildcards: 0 },
+  );
+}
 export const fields = [
   "wonder",
   "civilian",
@@ -95,6 +113,10 @@ export function score(p: Player) {
       Math.floor(p.coins / 3),
   };
 }
+export function withWonderScoring(p: Player, builtStages: number): Player {
+  const bonus = wonderBonus(p.city, p.side, builtStages);
+  return { ...p, wonder: bonus.points, coins: p.coins + bonus.coins, military: p.military + bonus.shields, wildcards: p.wildcards + bonus.wildcards };
+}
 export function cardTotals(game: Game) {
   const players = game.players;
   const seats = game.seats ?? players.map((p) => p.id);
@@ -105,7 +127,12 @@ export function cardTotals(game: Game) {
     const idx = seats.indexOf(p.id);
     const neighbors = [byId.get(seats[(idx + seats.length - 1) % seats.length])!, byId.get(seats[(idx + 1) % seats.length])!];
     const near = neighbors.flatMap(n => cards[n.id] ?? []);
-    let civilian = 0, commercial = 0, guild = 0, military = game.wonderShields?.[p.id] ?? 0, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards, coins = p.coins;
+    const hasStageCount = Object.prototype.hasOwnProperty.call(game.wonderStages ?? {}, p.id);
+    const computedWonder = wonderBonus(p.city, p.side, game.wonderStages?.[p.id] ?? 0);
+    const wonder = hasStageCount
+      ? computedWonder
+      : { ...computedWonder, points: p.wonder, shields: game.wonderShields?.[p.id] ?? 0, wildcards: game.wonderScience?.[p.id] ? 1 : 0 };
+    let civilian = 0, commercial = 0, guild = 0, military = wonder.shields, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards + wonder.wildcards, coins = p.coins + wonder.coins;
     own.forEach(c => {
       if (c.points) civilian += c.points;
       if (c.shields) military += c.shields;
@@ -128,17 +155,16 @@ export function cardTotals(game: Game) {
         case "guildYellow": guild += near.filter(x=>x.color==="yellow").length; break;
         case "guildRed": guild += near.filter(x=>x.color==="red").length; break;
         case "guildGreen": guild += near.filter(x=>x.color==="green").length; break;
-        case "guildStages": guild += (game.wonderStages?.[neighbors[0].id] ?? 0) + (game.wonderStages?.[neighbors[1].id] ?? 0); break;
+        case "guildStages": guild += (game.wonderStages?.[p.id] ?? 0) + (game.wonderStages?.[neighbors[0].id] ?? 0) + (game.wonderStages?.[neighbors[1].id] ?? 0); break;
         case "guildAllStages": guild += (game.wonderStages?.[p.id] ?? 0) >= wonderStageLimit(p.city, p.side) ? 7 : 0; break;
         case "guildChoiceScience": wildcards++; break;
         case "guildShipowner": guild += own.filter(x=>["brown","gray","purple"].includes(x.color)).length; break;
         case "guildCoins": guild += Math.floor(coins/3); break;
       }
     });
-    if (game.wonderScience?.[p.id] ?? false) wildcards++;
     const scientific = science(compass, tablet, gear, wildcards).points;
-    const automatic = civilian + commercial + guild + military + scientific + Math.floor(coins / 3);
-    return [p.id, { civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scientific, automatic }];
+    const automatic = wonder.points + civilian + commercial + guild + military + p.military + scientific + Math.floor(coins / 3);
+    return [p.id, { wonder: wonder.points, civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scientific, automatic }];
   }));
 }
 export function standings(players: Player[]) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { player, science, score, standings, parseState, cardTotals, wonderStageLimit, type Card, type Game } from "./game";
+import { player, science, score, standings, parseState, cardTotals, wonderBonus, wonderStageLimit, withWonderScoring, type Card, type Game } from "./game";
 
 describe("science", () => {
   it("scores no symbols, sets, and uneven counts", () => {
@@ -52,6 +52,46 @@ describe("scores and results", () => {
     expect(result.filter((r) => r.winner)).toHaveLength(2);
   });
 });
+describe("Wonder scoring", () => {
+  it("adds printed points for the selected side and built stages", () => {
+    expect(wonderBonus("Giza", "Day", 2).points).toBe(8);
+    expect(wonderBonus("Giza", "Night", 4).points).toBe(20);
+    expect(wonderBonus("Alexandria", "Day", 3).points).toBe(10);
+    expect(wonderBonus("Alexandria", "Night", 3).points).toBe(7);
+    expect(wonderBonus("Giza", "Night", 99).points).toBe(20);
+  });
+  it("calculates Ephesus coins and points from Day and Night stages", () => {
+    expect(wonderBonus("Ephesus", "Day", 2)).toEqual({ points: 3, coins: 9, shields: 0, wildcards: 0 });
+    expect(wonderBonus("Ephesus", "Night", 3)).toEqual({ points: 10, coins: 12, shields: 0, wildcards: 0 });
+  });
+  it("adds Rhodes shields and coins, and Babylon science, from completed stages", () => {
+    expect(wonderBonus("Rhodes", "Day", 2)).toEqual({ points: 0, coins: 0, shields: 5, wildcards: 0 });
+    expect(wonderBonus("Rhodes", "Night", 2)).toEqual({ points: 7, coins: 7, shields: 2, wildcards: 0 });
+    expect(wonderBonus("Babylon", "Day", 2).wildcards).toBe(1);
+    expect(wonderBonus("Babylon", "Night", 1).wildcards).toBe(0);
+    expect(wonderBonus("Babylon", "Night", 2).wildcards).toBe(1);
+  });
+  it("scores Halicarnassus and Olympia stage points by side", () => {
+    expect(wonderBonus("Halicarnassus", "Day", 3).points).toBe(10);
+    expect(wonderBonus("Halicarnassus", "Night", 3).points).toBe(3);
+    expect(wonderBonus("Olympia", "Day", 3).points).toBe(10);
+    expect(wonderBonus("Olympia", "Night", 3).points).toBe(10);
+  });
+  it("uses computed Wonder effects in a manual player's final score", () => {
+    const p = { ...player(0), city: "Ephesus", side: "Night" as const, civilian: 10, coins: 2 };
+    const scored = withWonderScoring(p, 3);
+    expect(scored.wonder).toBe(10);
+    expect(scored.coins).toBe(14);
+    expect(score(scored).treasury).toBe(4);
+    expect(score(scored).total).toBe(24);
+  });
+  it("uses each Wonder's side-specific stage limit", () => {
+    expect(wonderStageLimit("Giza", "Night")).toBe(4);
+    expect(wonderStageLimit("Babylon", "Night")).toBe(2);
+    expect(wonderStageLimit("Rhodes", "Night")).toBe(2);
+    expect(wonderStageLimit("Giza", "Day")).toBe(3);
+  });
+});
 describe("card scoring edge cases", () => {
   const players = [player(0), player(1), player(2)];
   const card = (id: string, color: string, effect?: Card["effect"], extras: Partial<Card> = {}): Card => ({ id, name: id, age: 3, color, effect, ...extras });
@@ -74,12 +114,12 @@ describe("card scoring edge cases", () => {
     });
     expect(cardTotals(g)[players[0].id].coins).toBe(2);
   });
-  it("scores Arena and Builders Guild from the entered Wonder stages", () => {
+  it("scores Arena from own stages and Builders Guild from own and neighboring stages", () => {
     const g = game({
       [players[0].id]: [card("Arena", "yellow", "vpStages"), card("Builders Guild", "purple", "guildStages")],
     }, { wonderStages: { [players[0].id]: 2, [players[1].id]: 1, [players[2].id]: 3 } });
     expect(cardTotals(g)[players[0].id].commercial).toBe(2);
-    expect(cardTotals(g)[players[0].id].guild).toBe(4);
+    expect(cardTotals(g)[players[0].id].guild).toBe(6);
   });
   it("requires every stage for Decorators Guild, including four-stage Giza Night", () => {
     const g = game({ [players[0].id]: [card("Decorators Guild", "purple", "guildAllStages")] }, { wonderStages: { [players[0].id]: 3 } });
@@ -90,20 +130,40 @@ describe("card scoring edge cases", () => {
     g.wonderStages![players[0].id] = 4;
     expect(cardTotals(g)[players[0].id].guild).toBe(7);
   });
-  it("adds science from cards and an enabled Wonder symbol, while defaulting it off", () => {
+  it("adds science automatically from built Babylon stages and science cards", () => {
     const noBonus = game({});
     expect(cardTotals(noBonus)[players[0].id].wildcards).toBe(0);
-    const g = game({ [players[0].id]: [card("compass", "green", undefined, { science: "compass" }), card("Scientists Guild", "purple", "guildChoiceScience")] });
+    const g = game({ [players[0].id]: [card("compass", "green", undefined, { science: "compass" }), card("Scientists Guild", "purple", "guildChoiceScience")] }, { wonderStages: { [players[0].id]: 2 } });
+    g.players[0].city = "Babylon";
     expect(cardTotals(g)[players[0].id].compass).toBe(1);
-    expect(cardTotals(g)[players[0].id].wildcards).toBe(1);
-    expect(cardTotals(g)[players[0].id].scientific).toBe(4);
-    g.wonderScience = { [players[0].id]: true };
     expect(cardTotals(g)[players[0].id].wildcards).toBe(2);
     expect(cardTotals(g)[players[0].id].scientific).toBe(10);
   });
-  it("includes card shields and manually entered Wonder shields", () => {
-    const g = game({ [players[0].id]: [card("red", "red", undefined, { shields: 2 })] }, { wonderShields: { [players[0].id]: 1 } });
-    expect(cardTotals(g)[players[0].id].military).toBe(3);
+  it("updates the card-mode Wild count for Babylon Day and Night stage effects", () => {
+    const g = game({}, { wonderStages: { [players[0].id]: 1 } });
+    g.players[0].city = "Babylon";
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(0);
+    g.wonderStages![players[0].id] = 2;
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(1);
+    expect(cardTotals(g)[players[0].id].scientific).toBe(1);
+    g.players[0].side = "Night";
+    g.wonderStages![players[0].id] = 1;
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(0);
+    g.wonderStages![players[0].id] = 2;
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(1);
+  });
+  it("adds Rhodes Night shields and coins from stage count without manual bonuses", () => {
+    const g = game({ [players[0].id]: [card("red", "red", undefined, { shields: 2 })] }, { wonderStages: { [players[0].id]: 2 } });
+    g.players[0].city = "Rhodes";
+    g.players[0].side = "Night";
+    expect(cardTotals(g)[players[0].id].military).toBe(4);
+    expect(cardTotals(g)[players[0].id].coins).toBe(7);
+    expect(cardTotals(g)[players[0].id].wonder).toBe(7);
+  });
+  it("keeps manually saved Wonder points when a legacy save has no stage count", () => {
+    const g = game({}, { wonderStages: {}, mode: "cards" });
+    g.players[0].wonder = 5;
+    expect(cardTotals(g)[players[0].id].wonder).toBe(5);
   });
 });
 describe("saved games", () => {
