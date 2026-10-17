@@ -884,6 +884,82 @@ dialog p {
     width: 200px;
   }
 }
+@media (min-width: 700px) and (max-width: 1100px) {
+  .score-table {
+    width: 100%;
+    min-width: 0;
+  }
+  .score-table th,
+  .score-table td {
+    padding: 10px 4px;
+  }
+  .score-table th:first-child {
+    width: 170px;
+    min-width: 0;
+  }
+  .score-table .player-heading {
+    width: auto;
+    min-width: 0;
+    padding: 10px 4px;
+  }
+  .player-top {
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .player-heading .player-mark {
+    width: 28px;
+    height: 28px;
+    font-size: 15px;
+  }
+  .player-heading .color-label input {
+    width: 17px;
+    height: 17px;
+  }
+  .player-heading .name-input {
+    font-size: 12px;
+    margin-bottom: 4px;
+    padding: 5px 2px;
+  }
+  .player-heading select {
+    font-size: 9px;
+    padding: 5px 2px;
+    text-overflow: ellipsis;
+  }
+  .score-table .player-heading .side-select {
+    width: 54px;
+    margin-top: 2px;
+    font-size: 9px;
+  }
+  .score-table .number {
+    width: 54px;
+    font-size: 14px;
+    padding: 6px 1px;
+  }
+  .score-table .science-inputs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px;
+  }
+  .score-table .science-inputs .number {
+    width: 100%;
+  }
+  .score-table .science-inputs label > span {
+    margin-bottom: 2px;
+  }
+  .score-table .category-heading {
+    padding: 14px 10px;
+  }
+  .score-table .category-heading h2 {
+    font-size: 21px;
+  }
+  .score-table tbody th:not(.total-row th) {
+    padding-left: 10px;
+    padding-right: 7px;
+  }
+  .score-table .category-symbol {
+    margin-right: 5px;
+    font-size: 15px;
+  }
+}
 @media (max-width: 620px) {
   .site-header {
     height: auto;
