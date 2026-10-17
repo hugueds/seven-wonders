@@ -18,6 +18,12 @@ import {
 } from "./game";
 import "./styles.css";
 
+if ("serviceWorker" in navigator && import.meta.env.PROD) {
+  window.addEventListener("load", () => {
+    void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`);
+  });
+}
+
 const STORAGE = "seven-wonders-companion-v1";
 function readSaved(): { state: State; warning: string } {
   try {

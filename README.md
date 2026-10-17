@@ -35,6 +35,12 @@ npm run test:e2e
 
 An existing Chromium executable can also be selected through `CHROMIUM_PATH`.
 
+## Install and GitHub Pages
+
+The app can be installed from a supported browser and works offline after its first successful load. It stores each player's scores and history in that browser.
+
+GitHub Actions builds and deploys the site to GitHub Pages when changes are pushed to `master`. In the repository settings, set **Pages > Build and deployment > Source** to **GitHub Actions**. The site is then available at `https://hugueds.github.io/seven-wonders/`.
+
 ## At the table
 
 Choose 3–7 players on the Scoreboard, then edit their names, colors, and optional Wonder selections. Play with the physical game and enter final scores when ready. Enter actual coins in Treasury, and counts of science symbols in Science. Wildcards are automatically assigned for the highest score. Enter guild points without counting scientific symbols a second time.

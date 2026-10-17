@@ -1,0 +1,26 @@
+{
+  "id": "./",
+  "name": "7 Wonders Table Companion",
+  "short_name": "7 Wonders",
+  "description": "Scoring, searchable rules, and game history for 7 Wonders.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f4f1e9",
+  "theme_color": "#172f30",
+  "icons": [
+    {
+      "src": "./icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
