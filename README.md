@@ -43,7 +43,7 @@ GitHub Actions builds and deploys the site to GitHub Pages when changes are push
 
 ## At the table
 
-Choose 3–7 players on the Scoreboard, then edit their names, colors, and optional Wonder selections. Play with the physical game and enter final scores when ready. Enter actual coins in Treasury, and counts of science symbols in Science. Wildcards are automatically assigned for the highest score. Enter guild points without counting scientific symbols a second time.
+Choose 3–7 players on the Scoreboard, then edit their names, colors, and optional Wonder selections. Play with the physical game and enter final scores when ready. Enter actual coins and counts of science symbols. Wildcards are automatically assigned for the highest score. Enter guild points without counting scientific symbols a second time.
 
 Scores update as you type. Invalid or empty numeric edits revert to the previous valid value when leaving the field. Finish game saves a snapshot to History; a rematch keeps the players and clears all score inputs. Rules remain accessible while scoring. The table scrolls horizontally on smaller screens.
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { player, science, score, standings, parseState } from "./game";
+import { player, science, score, standings, parseState, cardTotals, wonderStageLimit, type Card, type Game } from "./game";
 
 describe("science", () => {
   it("scores no symbols, sets, and uneven counts", () => {
@@ -52,6 +52,60 @@ describe("scores and results", () => {
     expect(result.filter((r) => r.winner)).toHaveLength(2);
   });
 });
+describe("card scoring edge cases", () => {
+  const players = [player(0), player(1), player(2)];
+  const card = (id: string, color: string, effect?: Card["effect"], extras: Partial<Card> = {}): Card => ({ id, name: id, age: 3, color, effect, ...extras });
+  const game = (cards: Record<string, Card[]>, extras: Partial<Game> = {}): Game => ({ ...baseGame(), cards, ...extras });
+  const baseGame = (): Game => { const localPlayers = players.map(p=>({...p})); return { id: "cards", mode: "cards", players: localPlayers, seats: localPlayers.map(p=>p.id) }; };
+
+  it("wraps both ends of the seating order for neighbor guilds", () => {
+    const g = game({
+      [players[0].id]: [card("Workers Guild", "purple", "guildBrown")],
+      [players[1].id]: [card("brown-left", "brown")],
+      [players[2].id]: [card("brown-right-1", "brown"), card("brown-right-2", "brown")],
+    });
+    expect(cardTotals(g)[players[0].id].guild).toBe(3);
+  });
+  it("counts own and both neighbors' brown and gray cards for commercial coin effects", () => {
+    const g = game({
+      [players[0].id]: [card("Vineyard", "yellow", "coinsAllBrown"), card("own-brown", "brown")],
+      [players[1].id]: [card("left-brown", "brown")],
+      [players[2].id]: [card("right-gray", "gray")],
+    });
+    expect(cardTotals(g)[players[0].id].coins).toBe(2);
+  });
+  it("scores Arena and Builders Guild from the entered Wonder stages", () => {
+    const g = game({
+      [players[0].id]: [card("Arena", "yellow", "vpStages"), card("Builders Guild", "purple", "guildStages")],
+    }, { wonderStages: { [players[0].id]: 2, [players[1].id]: 1, [players[2].id]: 3 } });
+    expect(cardTotals(g)[players[0].id].commercial).toBe(2);
+    expect(cardTotals(g)[players[0].id].guild).toBe(4);
+  });
+  it("requires every stage for Decorators Guild, including four-stage Giza Night", () => {
+    const g = game({ [players[0].id]: [card("Decorators Guild", "purple", "guildAllStages")] }, { wonderStages: { [players[0].id]: 3 } });
+    g.players[0].city = "Giza";
+    g.players[0].side = "Night";
+    expect(wonderStageLimit("Giza", "Night")).toBe(4);
+    expect(cardTotals(g)[players[0].id].guild).toBe(0);
+    g.wonderStages![players[0].id] = 4;
+    expect(cardTotals(g)[players[0].id].guild).toBe(7);
+  });
+  it("adds science from cards and an enabled Wonder symbol, while defaulting it off", () => {
+    const noBonus = game({});
+    expect(cardTotals(noBonus)[players[0].id].wildcards).toBe(0);
+    const g = game({ [players[0].id]: [card("compass", "green", undefined, { science: "compass" }), card("Scientists Guild", "purple", "guildChoiceScience")] });
+    expect(cardTotals(g)[players[0].id].compass).toBe(1);
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(1);
+    expect(cardTotals(g)[players[0].id].scientific).toBe(4);
+    g.wonderScience = { [players[0].id]: true };
+    expect(cardTotals(g)[players[0].id].wildcards).toBe(2);
+    expect(cardTotals(g)[players[0].id].scientific).toBe(10);
+  });
+  it("includes card shields and manually entered Wonder shields", () => {
+    const g = game({ [players[0].id]: [card("red", "red", undefined, { shields: 2 })] }, { wonderShields: { [players[0].id]: 1 } });
+    expect(cardTotals(g)[players[0].id].military).toBe(3);
+  });
+});
 describe("saved games", () => {
   const game = { id: "game", players: [player(0), player(1), player(2)] };
   it("restores active games and completed snapshots", () => {
@@ -60,7 +114,10 @@ describe("saved games", () => {
       active: game,
       history: [{ ...game, completedAt: "2026-10-17T12:00:00Z" }],
     };
-    expect(parseState(JSON.stringify(s))).toEqual(s);
+    const parsed = parseState(JSON.stringify(s));
+    expect(parsed.version).toBe(2);
+    expect(parsed.active).toMatchObject({ ...game, mode: "manual", cards: {}, wonderStages: {}, wonderScience: Object.fromEntries(game.players.map(p=>[p.id,false])), wonderShields: {}, seats: game.players.map(p=>p.id) });
+    expect(parsed.history[0]).toMatchObject({ ...game, mode: "manual", completedAt: "2026-10-17T12:00:00Z", cards: {}, wonderStages: {}, wonderScience: Object.fromEntries(game.players.map(p=>[p.id,false])), wonderShields: {}, seats: game.players.map(p=>p.id) });
   });
   it("rejects malformed saves and unsupported versions", () => {
     for (const raw of [
