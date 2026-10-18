@@ -150,7 +150,7 @@ function scoredPlayer(game: Game, p: Player): Player {
   const wonder = wonderBonus(p.city, p.side, stages);
   if (game.mode === "cards") {
     const totals = cardTotals(game)[p.id];
-    return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military + totals.military, coins: totals.coins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
+    return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military + totals.military, coins: totals.coins, scoringCoins: totals.scoringCoins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
   }
   return withWonderScoring(p, stages);
 }
@@ -265,7 +265,7 @@ function Rules() {
   );
 }
 function Breakdown({ game }: { game: Game }) {
-  const automatic = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }>;
+  const automatic = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }>;
   const scoringPlayers = game.players.map((p) => scoredPlayer(game, p));
   return (
     <div className="table-scroll">
@@ -325,15 +325,15 @@ function Breakdown({ game }: { game: Game }) {
   );
 }
 function CardModeScoreboard({ game, update, updateStages, updateWonder }: { game: Game; update: (id: string, patch: Partial<Player>) => void; updateStages: (id: string, stages: number) => void; updateWonder: (id: string, patch: Partial<Player>) => void }) {
-  const totals = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
+  const totals = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
   return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption>Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Card and Wonder scoring effects update automatically.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><input className="name-input" aria-label={`Name for ${p.name}`} maxLength={30} value={p.name} onChange={e=>update(p.id,{name:e.target.value})} onBlur={()=>{if(!p.name.trim())update(p.id,{name:`Player ${game.players.indexOf(p)+1}`})}}/><select aria-label={`Wonder for ${p.name}`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select><select className="side-select" aria-label={`Wonder side for ${p.name}`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></th>)}</tr></thead><tbody>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Points and scoreable stage effects</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={game.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/><small className="calculated">{totals[p.id].wonder} points from stages</small></td>)}</tr>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].coins/3)} points</small></td>)}</tr>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically; Ephesus Day stage coins do not score</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].scoringCoins/3)} points</small></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#ae4d45"}} aria-hidden="true">✕</span>Military<small>Card shields plus conflict tokens</small></th>{game.players.map(p=><td key={p.id}><small className="calculated">{totals[p.id].military} card shields</small><NumberInput value={p.military} min={-100} label={`${p.name}: Conflict tokens`} onChange={n=>update(p.id,{military:n})}/></td>)}</tr>
     {([["Civilian","civilian","#3d739f","▮"],["Commercial","commercial","#ab851e","●"]] as const).map(([label,key,color,symbol])=><tr key={key}><th scope="row"><span className="category-symbol" style={{color}} aria-hidden="true">{symbol}</span>{label}<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></td>)}</tr>)}
     <tr className="science-row"><th scope="row"><span className="category-symbol science-symbol" aria-hidden="true">✳</span>Science<small>Symbols from cards and Wonder</small></th>{game.players.map(p=><td key={p.id}><div className="science-inputs">{([["Compass","compass"],["Tablet","tablet"],["Gear","gear"],["Wild","wildcards"]] as const).map(([label,key])=><label key={key}><span>{label}</span><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></label>)}</div><strong className="science-points">{totals[p.id].scientific} <small>points</small></strong></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#876594"}} aria-hidden="true">?</span>Guilds<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id].guild} label={`${p.name}: Guilds`} readOnly onChange={()=>{}}/></td>)}</tr>
-    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+totals[p.id].military+p.military+totals[p.id].scientific+Math.floor(totals[p.id].coins/3)}</strong></td>)}</tr>
+    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+totals[p.id].military+p.military+totals[p.id].scientific+Math.floor(totals[p.id].scoringCoins/3)}</strong></td>)}</tr>
     </tbody></table></div></section>;
 }
 function App() {
@@ -375,7 +375,7 @@ function App() {
     }
   }, [tab]);
   const active = state.active;
-  const automatic = active ? cardTotals(active) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }> : {};
+  const automatic = active ? cardTotals(active) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }> : {};
   function start(players = Array.from({ length: count }, (_, i) => player(i))) {
     setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players } }));
     setTab("Scoreboard");

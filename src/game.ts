@@ -58,6 +58,7 @@ export type Player = {
   color: string;
   city: string;
   side: "Day" | "Night";
+  scoringCoins?: number;
 } & Record<Field, number>;
 export type Card = { id: string; name: string; age: 1 | 2 | 3; color: string; points?: number; shields?: number; science?: "compass" | "tablet" | "gear" | "wildcards"; effect?: "coins3" | "coinsBrown" | "coinsGray" | "coinsAllBrown" | "coinsAllGray" | "vpYellow" | "vpBrown" | "vpGray" | "vpRed" | "vpStages" | "guildBrown" | "guildGray" | "guildBlue" | "guildYellow" | "guildRed" | "guildGreen" | "guildStages" | "guildAllStages" | "guildChoiceScience" | "guildShipowner" | "guildCoins" };
 export type Game = { id: string; players: Player[]; completedAt?: string; mode?: "manual" | "cards"; seats?: string[]; cards?: Record<string, Card[]>; wonderStages?: Record<string, number>; wonderScience?: Record<string, boolean>; wonderShields?: Record<string, number> };
@@ -100,9 +101,10 @@ export function science(
 }
 export function score(p: Player) {
   const scientific = science(p.compass, p.tablet, p.gear, p.wildcards).points;
+  const scoringCoins = p.scoringCoins ?? p.coins;
   return {
     scientific,
-    treasury: Math.floor(p.coins / 3),
+    treasury: Math.floor(scoringCoins / 3),
     total:
       p.wonder +
       p.civilian +
@@ -110,12 +112,14 @@ export function score(p: Player) {
       p.guild +
       p.military +
       scientific +
-      Math.floor(p.coins / 3),
+      Math.floor(scoringCoins / 3),
   };
 }
 export function withWonderScoring(p: Player, builtStages: number): Player {
   const bonus = wonderBonus(p.city, p.side, builtStages);
-  return { ...p, wonder: bonus.points, coins: p.coins + bonus.coins, military: p.military + bonus.shields, wildcards: p.wildcards + bonus.wildcards };
+  const coins = p.coins + bonus.coins;
+  const excludedWonderCoins = p.city === "Ephesus" && p.side === "Day" ? bonus.coins : 0;
+  return { ...p, wonder: bonus.points, coins, scoringCoins: coins - excludedWonderCoins, military: p.military + bonus.shields, wildcards: p.wildcards + bonus.wildcards };
 }
 export function cardTotals(game: Game) {
   const players = game.players;
@@ -163,8 +167,10 @@ export function cardTotals(game: Game) {
       }
     });
     const scientific = science(compass, tablet, gear, wildcards).points;
-    const automatic = wonder.points + civilian + commercial + guild + military + p.military + scientific + Math.floor(coins / 3);
-    return [p.id, { wonder: wonder.points, civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scientific, automatic }];
+    const excludedWonderCoins = hasStageCount && p.city === "Ephesus" && p.side === "Day" ? wonder.coins : 0;
+    const scoringCoins = coins - excludedWonderCoins;
+    const automatic = wonder.points + civilian + commercial + guild + military + p.military + scientific + Math.floor(scoringCoins / 3);
+    return [p.id, { wonder: wonder.points, civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scoringCoins, scientific, automatic }];
   }));
 }
 export function standings(players: Player[]) {
