@@ -150,7 +150,7 @@ function scoredPlayer(game: Game, p: Player): Player {
   const wonder = wonderBonus(p.city, p.side, stages);
   if (game.mode === "cards") {
     const totals = cardTotals(game)[p.id];
-    return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military + totals.military, coins: totals.coins, scoringCoins: totals.scoringCoins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
+    return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military, coins: totals.coins, scoringCoins: totals.scoringCoins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
   }
   return withWonderScoring(p, stages);
 }
@@ -324,16 +324,16 @@ function Breakdown({ game }: { game: Game }) {
     </div>
   );
 }
-function CardModeScoreboard({ game, update, updateStages, updateWonder }: { game: Game; update: (id: string, patch: Partial<Player>) => void; updateStages: (id: string, stages: number) => void; updateWonder: (id: string, patch: Partial<Player>) => void }) {
+function CardModeScoreboard({ game, update }: { game: Game; update: (id: string, patch: Partial<Player>) => void }) {
   const totals = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
-  return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption>Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Card and Wonder scoring effects update automatically.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><input className="name-input" aria-label={`Name for ${p.name}`} maxLength={30} value={p.name} onChange={e=>update(p.id,{name:e.target.value})} onBlur={()=>{if(!p.name.trim())update(p.id,{name:`Player ${game.players.indexOf(p)+1}`})}}/><select aria-label={`Wonder for ${p.name}`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select><select className="side-select" aria-label={`Wonder side for ${p.name}`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></th>)}</tr></thead><tbody>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Points and scoreable stage effects</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={game.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/><small className="calculated">{totals[p.id].wonder} points from stages</small></td>)}</tr>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically; Ephesus Day stage coins do not score</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].scoringCoins/3)} points</small></td>)}</tr>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#ae4d45"}} aria-hidden="true">✕</span>Military<small>Card shields plus conflict tokens</small></th>{game.players.map(p=><td key={p.id}><small className="calculated">{totals[p.id].military} card shields</small><NumberInput value={p.military} min={-100} label={`${p.name}: Conflict tokens`} onChange={n=>update(p.id,{military:n})}/></td>)}</tr>
+  return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption>Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Card and Wonder scoring effects update automatically.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><span className="name-display">{p.name}</span><small className="selected-wonder">{p.city ? `${p.city} (${p.side})` : "Wonder not selected"}</small></th>)}</tr></thead><tbody>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Calculated from built stages</small></th>{game.players.map(p=><td key={p.id}><span className="calculated">{game.wonderStages?.[p.id]??0} stages built</span><strong className="science-points">{totals[p.id].wonder} <small>points</small></strong></td>)}</tr>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].scoringCoins/3)} points</small></td>)}</tr>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#ae4d45"}} aria-hidden="true">✕</span>Military<small>Enter the final military score manually</small></th>{game.players.map(p=><td key={p.id}><small className="calculated">{totals[p.id].military} card shields (reference)</small><NumberInput value={p.military} min={-100} label={`${p.name}: Military points`} onChange={n=>update(p.id,{military:n})}/></td>)}</tr>
     {([["Civilian","civilian","#3d739f","▮"],["Commercial","commercial","#ab851e","●"]] as const).map(([label,key,color,symbol])=><tr key={key}><th scope="row"><span className="category-symbol" style={{color}} aria-hidden="true">{symbol}</span>{label}<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></td>)}</tr>)}
     <tr className="science-row"><th scope="row"><span className="category-symbol science-symbol" aria-hidden="true">✳</span>Science<small>Symbols from cards and Wonder</small></th>{game.players.map(p=><td key={p.id}><div className="science-inputs">{([["Compass","compass"],["Tablet","tablet"],["Gear","gear"],["Wild","wildcards"]] as const).map(([label,key])=><label key={key}><span>{label}</span><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></label>)}</div><strong className="science-points">{totals[p.id].scientific} <small>points</small></strong></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#876594"}} aria-hidden="true">?</span>Guilds<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id].guild} label={`${p.name}: Guilds`} readOnly onChange={()=>{}}/></td>)}</tr>
-    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+totals[p.id].military+p.military+totals[p.id].scientific+Math.floor(totals[p.id].scoringCoins/3)}</strong></td>)}</tr>
+    <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+p.military+totals[p.id].scientific+Math.floor(totals[p.id].scoringCoins/3)}</strong></td>)}</tr>
     </tbody></table></div></section>;
 }
 function App() {
@@ -688,46 +688,45 @@ function App() {
                                   />
                                 </label>
                               </div>
-                              <input
-                                className="name-input"
-                                aria-label={`Name for ${p.name}`}
-                                maxLength={30}
-                                value={p.name}
-                                onChange={(e) =>
-                                  update(p.id, { name: e.target.value })
-                                }
-                                onBlur={() => {
-                                  if (!p.name.trim())
-                                    update(p.id, {
-                                      name: `Player ${active.players.indexOf(p) + 1}`,
-                                    });
-                                }}
-                              />
-                              <select
-                                aria-label={`Wonder for ${p.name}`}
-                                value={p.city}
-                                onChange={(e) =>
-                                  updateWonder(p.id, { city: e.target.value })
-                                }
-                              >
-                                <option value="">Choose a Wonder</option>
-                                {wonders.map((w) => (
-                                  <option key={w}>{w}</option>
-                                ))}
-                              </select>
-                              <select
-                                className="side-select"
-                                aria-label={`Wonder side for ${p.name}`}
-                                value={p.side}
-                                onChange={(e) =>
-                                  updateWonder(p.id, {
-                                    side: e.target.value as Player["side"],
-                                  })
-                                }
-                              >
-                                <option>Day</option>
-                                <option>Night</option>
-                              </select>
+                              {active.mode === "cards" ? (
+                                <span className="name-display">{p.name}</span>
+                              ) : (
+                                <input
+                                  className="name-input"
+                                  aria-label={`Name for ${p.name}`}
+                                  maxLength={30}
+                                  value={p.name}
+                                  onChange={(e) => update(p.id, { name: e.target.value })}
+                                  onBlur={() => {
+                                    if (!p.name.trim()) update(p.id, { name: `Player ${active.players.indexOf(p) + 1}` });
+                                  }}
+                                />
+                              )}
+                              {active.mode === "cards" ? (
+                                <small className="selected-wonder">
+                                  {p.city ? `${p.city} (${p.side})` : "Wonder not selected"}
+                                </small>
+                              ) : (
+                                <>
+                                  <select
+                                    aria-label={`Wonder for ${p.name}`}
+                                    value={p.city}
+                                    onChange={(e) => updateWonder(p.id, { city: e.target.value })}
+                                  >
+                                    <option value="">Choose a Wonder</option>
+                                    {wonders.map((w) => <option key={w}>{w}</option>)}
+                                  </select>
+                                  <select
+                                    className="side-select"
+                                    aria-label={`Wonder side for ${p.name}`}
+                                    value={p.side}
+                                    onChange={(e) => updateWonder(p.id, { side: e.target.value as Player["side"] })}
+                                  >
+                                    <option>Day</option>
+                                    <option>Night</option>
+                                  </select>
+                                </>
+                              )}
                             </th>
                           ))}
                         </tr>
@@ -752,21 +751,25 @@ function App() {
                               <td key={p.id}>
                                 {c.key === "wonder" ? (
                                   <>
-                                    <NumberInput
-                                      value={active.wonderStages?.[p.id] ?? 0}
-                                      max={wonderStageLimit(p.city, p.side)}
-                                      label={`${p.name}: Wonder stages built`}
-                                      onChange={(n) => updateStages(p.id, n)}
-                                    />
+                                    {active.mode === "cards" ? (
+                                      <small className="calculated">{active.wonderStages?.[p.id] ?? 0} stages built</small>
+                                    ) : (
+                                      <NumberInput
+                                        value={active.wonderStages?.[p.id] ?? 0}
+                                        max={wonderStageLimit(p.city, p.side)}
+                                        label={`${p.name}: Wonder stages built`}
+                                        onChange={(n) => updateStages(p.id, n)}
+                                      />
+                                    )}
                                     <small className="calculated">
                                       {(Object.prototype.hasOwnProperty.call(active.wonderStages ?? {}, p.id) ? wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).points : p.wonder)} Wonder points
                                     </small>
                                   </>
                                 ) : active.mode === "cards" && c.key === "military" ? (
                                   <div className="military-card-score">
-                                    <span>{automatic[p.id].military} card shields</span>
-                                    <NumberInput value={p.military} min={-100} label={`${p.name}: conflict tokens`} onChange={(n) => update(p.id, { military: n })} />
-                                    <small>Conflict tokens</small>
+                                    <span>{automatic[p.id].military} card shields (reference)</span>
+                                    <NumberInput value={p.military} min={-100} label={`${p.name}: military points`} onChange={(n) => update(p.id, { military: n })} />
+                                    <small>Enter the final result manually</small>
                                   </div>
                                 ) : (
                                   <NumberInput
@@ -779,11 +782,8 @@ function App() {
                                 )}
                                 {c.key === "coins" && (
                                   <small className="calculated">
-                                    = {active.mode === "cards" ? Math.floor(automatic[p.id].coins/3) : score(scoredPlayer(active,p)).treasury} points
+                                    = {active.mode === "cards" ? Math.floor(automatic[p.id].scoringCoins/3) : score(scoredPlayer(active,p)).treasury} points
                                   </small>
-                                )}
-                                {c.key === "military" && active.mode !== "cards" && wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).shields > 0 && (
-                                  <small className="calculated">+{wonderBonus(p.city, p.side, active.wonderStages?.[p.id] ?? 0).shields} Wonder shields</small>
                                 )}
                               </td>
                             ))}
@@ -926,9 +926,9 @@ function App() {
             <div className="page-heading"><div><span className="eyebrow">Card based scoring</span><h1>Count the city.</h1><p>Select built cards; adjacent seating powers guild and neighbor effects.</p></div><span className="edition">BASE GAME Â· 2ND EDITION</span></div>
             <div className="toolbar"><div>Seating order is clockwise, wrapping at the ends.</div></div>
             <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">Â· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
-            <section className="panel cards-panel seating-panel"><div className="seating-heading"><div><h2>Player positions</h2><p>Guilds count the players immediately beside you. Positions wrap around the table.</p></div><span className="clockwise">Clockwise ↓</span></div><div className="seat-grid">{(active.seats??active.players.map(p=>p.id)).map((id,i)=>{const seatIds=active.seats??active.players.map(p=>p.id);const seated=active.players.find(p=>p.id===id)!;const left=active.players.find(p=>p.id===seatIds[(i+seatIds.length-1)%seatIds.length])!;const right=active.players.find(p=>p.id===seatIds[(i+1)%seatIds.length])!;return <article className="seat-position" key={`seat-${i}`}><label>Seat {i+1}<select aria-label={`Player in seat ${i+1}`} value={id} onChange={e=>swapSeat(i,e.target.value)}>{active.players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="seat-player" style={{borderColor:seated.color}}><PlayerMark p={seated}/><strong>{seated.name}</strong></div><div className="seat-neighbors"><span title="Player to the left">← {left.name}</span><span title="Player to the right">{right.name} →</span></div></article>})}</div></section>
+            <section className="panel cards-panel seating-panel"><div className="seating-heading"><div><h2>Player positions</h2><p>Guilds count the players immediately beside you. Positions wrap around the table.</p></div><span className="clockwise">Clockwise ↓</span></div><div className="seat-grid">{(active.seats??active.players.map(p=>p.id)).map((id,i)=>{const seatIds=active.seats??active.players.map(p=>p.id);const seated=active.players.find(p=>p.id===id)!;const left=active.players.find(p=>p.id===seatIds[(i+seatIds.length-1)%seatIds.length])!;const right=active.players.find(p=>p.id===seatIds[(i+1)%seatIds.length])!;return <article className="seat-position" key={`seat-${i}`}><label>Seat {i+1}<select aria-label={`Player in seat ${i+1}`} value={id} onChange={e=>swapSeat(i,e.target.value)}>{active.players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="seat-player" style={{borderColor:seated.color}}><PlayerMark p={seated}/><input className="position-name-input" aria-label={`Name for ${seated.name}`} maxLength={30} value={seated.name} onChange={e=>update(seated.id,{name:e.target.value})} onBlur={()=>{if(!seated.name.trim())update(seated.id,{name:`Player ${active.players.indexOf(seated)+1}`})}}/></div><div className="seat-neighbors"><span title="Player to the left">← {left.name}</span><span title="Player to the right">{right.name} →</span></div></article>})}</div></section>
             <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const usedCardIds=new Set(Object.values(active.cards??{}).flat().map(card=>card.id));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className="panel cards-panel" key={p.id} style={{borderTop:`3px solid ${p.color}`}}><h2>{p.name}</h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label>Card<select id={`card-${p.id}`} defaultValue=""><option value="" disabled>Select a card</option>{types.map(type=><optgroup key={type} label={{brown:"Brown · Raw materials",gray:"Gray · Manufactured goods",blue:"Blue · Civilian",red:"Red · Military",green:"Green · Science",yellow:"Yellow · Commercial",purple:"Purple · Guilds"}[type]??type}>{cardCatalog.filter(c=>c.color===type&&!usedCardIds.has(c.id)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button onClick={()=>{const card=cardCatalog.find(c=>c.id===(document.getElementById(`card-${p.id}`) as HTMLSelectElement).value);if(card&&!usedCardIds.has(card.id))setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),card]}}:null}))}}>Add card</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
-            <CardModeScoreboard game={active} update={update} updateStages={updateStages} updateWonder={updateWonder}/>
+            <CardModeScoreboard game={active} update={update}/>
           </>
         )}
         {tab === "History" && (

@@ -30,7 +30,7 @@ const wonderStages: Record<string, Record<Player["side"], WonderStage[]>> = {
   Giza: { Day: [{points:3},{points:5},{points:7}], Night: [{points:3},{points:5},{points:5},{points:7}] },
   Halicarnassus: { Day: [{points:3},{},{points:7}], Night: [{points:2},{points:1},{}] },
   Olympia: { Day: [{points:3},{},{points:7}], Night: [{points:2},{points:3},{points:5}] },
-  Rhodes: { Day: [{shields:3},{shields:2},{points:7}], Night: [{points:3,coins:3,shields:1},{points:4,coins:4,shields:1}] },
+  Rhodes: { Day: [{points:3},{shields:2},{points:7}], Night: [{points:3,coins:3,shields:1},{points:4,coins:4,shields:1}] },
 };
 export function wonderBonus(city: string, side: Player["side"], builtStages: number): WonderBonus {
   const built = wonderStages[city]?.[side] ?? [];
@@ -119,7 +119,7 @@ export function withWonderScoring(p: Player, builtStages: number): Player {
   const bonus = wonderBonus(p.city, p.side, builtStages);
   const coins = p.coins + bonus.coins;
   const excludedWonderCoins = p.city === "Ephesus" && p.side === "Day" ? bonus.coins : 0;
-  return { ...p, wonder: bonus.points, coins, scoringCoins: coins - excludedWonderCoins, military: p.military + bonus.shields, wildcards: p.wildcards + bonus.wildcards };
+  return { ...p, wonder: bonus.points, coins, scoringCoins: coins - excludedWonderCoins, wildcards: p.wildcards + bonus.wildcards };
 }
 export function cardTotals(game: Game) {
   const players = game.players;
@@ -135,8 +135,8 @@ export function cardTotals(game: Game) {
     const computedWonder = wonderBonus(p.city, p.side, game.wonderStages?.[p.id] ?? 0);
     const wonder = hasStageCount
       ? computedWonder
-      : { ...computedWonder, points: p.wonder, shields: game.wonderShields?.[p.id] ?? 0, wildcards: game.wonderScience?.[p.id] ? 1 : 0 };
-    let civilian = 0, commercial = 0, guild = 0, military = wonder.shields, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards + wonder.wildcards, coins = p.coins + wonder.coins;
+      : { ...computedWonder, points: p.wonder, shields: 0, wildcards: game.wonderScience?.[p.id] ? 1 : 0 };
+    let civilian = 0, commercial = 0, guild = 0, military = 0, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards + wonder.wildcards, coins = p.coins + wonder.coins;
     own.forEach(c => {
       if (c.points) civilian += c.points;
       if (c.shields) military += c.shields;
@@ -169,7 +169,7 @@ export function cardTotals(game: Game) {
     const scientific = science(compass, tablet, gear, wildcards).points;
     const excludedWonderCoins = hasStageCount && p.city === "Ephesus" && p.side === "Day" ? wonder.coins : 0;
     const scoringCoins = coins - excludedWonderCoins;
-    const automatic = wonder.points + civilian + commercial + guild + military + p.military + scientific + Math.floor(scoringCoins / 3);
+    const automatic = wonder.points + civilian + commercial + guild + p.military + scientific + Math.floor(scoringCoins / 3);
     return [p.id, { wonder: wonder.points, civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scoringCoins, scientific, automatic }];
   }));
 }

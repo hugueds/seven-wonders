@@ -64,8 +64,9 @@ describe("Wonder scoring", () => {
     expect(wonderBonus("Ephesus", "Day", 2)).toEqual({ points: 3, coins: 9, shields: 0, wildcards: 0 });
     expect(wonderBonus("Ephesus", "Night", 3)).toEqual({ points: 10, coins: 12, shields: 0, wildcards: 0 });
   });
-  it("adds Rhodes shields and coins, and Babylon science, from completed stages", () => {
-    expect(wonderBonus("Rhodes", "Day", 2)).toEqual({ points: 0, coins: 0, shields: 5, wildcards: 0 });
+  it("scores Rhodes points, shields, and coins, and Babylon science, from completed stages", () => {
+    expect(wonderBonus("Rhodes", "Day", 2)).toEqual({ points: 3, coins: 0, shields: 2, wildcards: 0 });
+    expect(wonderBonus("Rhodes", "Day", 3)).toEqual({ points: 10, coins: 0, shields: 2, wildcards: 0 });
     expect(wonderBonus("Rhodes", "Night", 2)).toEqual({ points: 7, coins: 7, shields: 2, wildcards: 0 });
     expect(wonderBonus("Babylon", "Day", 2).wildcards).toBe(1);
     expect(wonderBonus("Babylon", "Night", 1).wildcards).toBe(0);
@@ -152,11 +153,11 @@ describe("card scoring edge cases", () => {
     g.wonderStages![players[0].id] = 2;
     expect(cardTotals(g)[players[0].id].wildcards).toBe(1);
   });
-  it("adds Rhodes Night shields and coins from stage count without manual bonuses", () => {
+  it("keeps card shields visible but leaves Wonder military effects out of the score", () => {
     const g = game({ [players[0].id]: [card("red", "red", undefined, { shields: 2 })] }, { wonderStages: { [players[0].id]: 2 } });
     g.players[0].city = "Rhodes";
     g.players[0].side = "Night";
-    expect(cardTotals(g)[players[0].id].military).toBe(4);
+    expect(cardTotals(g)[players[0].id].military).toBe(2);
     expect(cardTotals(g)[players[0].id].coins).toBe(7);
     expect(cardTotals(g)[players[0].id].wonder).toBe(7);
   });
