@@ -566,7 +566,7 @@ function App() {
                 <span className="eyebrow">Great cities. Good company.</span>
                 <h1>Every civilization counts.</h1>
                 <p>
-                  Your table, your wonders, your final scores. Weâ€™ll do the
+                  Your table, your wonders, your final scores. We’ll do the
                   arithmetic.
                 </p>
               </div>
