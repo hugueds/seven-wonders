@@ -418,6 +418,28 @@ function App() {
       };
     });
   }
+  function randomizeWonders() {
+    setState((s) => {
+      if (!s.active) return s;
+      const available = [...wonders];
+      for (let i = available.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [available[i], available[j]] = [available[j], available[i]];
+      }
+      const players = s.active.players.map((p, i) => ({
+        ...p,
+        city: available[i],
+        side: (Math.random() < 0.5 ? "Day" : "Night") as Player["side"],
+      }));
+      const wonderStages = { ...s.active.wonderStages };
+      players.forEach((p) => {
+        if (Object.prototype.hasOwnProperty.call(wonderStages, p.id)) {
+          wonderStages[p.id] = Math.min(wonderStages[p.id], wonderStageLimit(p.city, p.side));
+        }
+      });
+      return { ...s, active: { ...s.active, players, wonderStages } };
+    });
+  }
   function confirm(title: string, text: string, action: () => void) {
     setDialog({ title, text, action });
   }
@@ -595,6 +617,7 @@ function App() {
                   </div>
                   <div className="toolbar-actions">
                     {active.mode === "cards" && <button onClick={() => setTab("Cards")}>Edit cards</button>}
+                    <button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button>
                     <button
                       onClick={() =>
                         confirm(
@@ -892,7 +915,7 @@ function App() {
           <>
             <div className="page-heading"><div><span className="eyebrow">Card based scoring</span><h1>Count the city.</h1><p>Select built cards; adjacent seating powers guild and neighbor effects.</p></div><span className="edition">BASE GAME Â· 2ND EDITION</span></div>
             <div className="toolbar"><div>Seating order is clockwise, wrapping at the ends.</div></div>
-            <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">Â· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
+            <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">Â· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
             <section className="panel cards-panel"><h2>Seat order</h2><div className="seat-grid">{active.players.map((p,i)=><label key={p.id}>{p.name}<select value={(active.seats??active.players.map(x=>x.id))[i]} onChange={e=>setState(s=>{if(!s.active)return s;const seats=[...(s.active.seats??s.active.players.map(x=>x.id))];const j=seats.indexOf(e.target.value);[seats[i],seats[j]]=[seats[j],seats[i]];return {...s,active:{...s.active,seats}}})}>{(active.seats??active.players.map(x=>x.id)).map(id=><option key={id} value={id}>{active.players.find(x=>x.id===id)?.name}</option>)}</select></label>)}</div></section>
             <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const usedCardIds=new Set(Object.values(active.cards??{}).flat().map(card=>card.id));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className="panel cards-panel" key={p.id} style={{borderTop:`3px solid ${p.color}`}}><h2>{p.name}</h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label>Card<select id={`card-${p.id}`} defaultValue=""><option value="" disabled>Select a card</option>{types.map(type=><optgroup key={type} label={{brown:"Brown · Raw materials",gray:"Gray · Manufactured goods",blue:"Blue · Civilian",red:"Red · Military",green:"Green · Science",yellow:"Yellow · Commercial",purple:"Purple · Guilds"}[type]??type}>{cardCatalog.filter(c=>c.color===type&&!usedCardIds.has(c.id)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button onClick={()=>{const card=cardCatalog.find(c=>c.id===(document.getElementById(`card-${p.id}`) as HTMLSelectElement).value);if(card&&!usedCardIds.has(card.id))setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),card]}}:null}))}}>Add card</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
             <CardModeScoreboard game={active} update={update} updateStages={updateStages} updateWonder={updateWonder}/>
