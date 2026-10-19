@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -153,6 +153,12 @@ function scoredPlayer(game: Game, p: Player): Player {
     return { ...p, wonder: totals.wonder, civilian: totals.civilian, commercial: totals.commercial, guild: totals.guild, military: p.military, coins: totals.coins, scoringCoins: totals.scoringCoins, compass: totals.compass, tablet: totals.tablet, gear: totals.gear, wildcards: totals.wildcards };
   }
   return withWonderScoring(p, stages);
+}
+function formatMatchDuration(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.floor(milliseconds / 60_000));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  return hours ? `${hours} hr ${minutes} min` : `${minutes} min`;
 }
 function Results({ game }: { game: Game }) {
   const scoringPlayers = game.players.map((p) => scoredPlayer(game, p));
@@ -336,6 +342,102 @@ function CardModeScoreboard({ game, update }: { game: Game; update: (id: string,
     <tr className="total-row"><th scope="row">Total points</th>{game.players.map(p=><td key={p.id}><strong>{totals[p.id].wonder+totals[p.id].civilian+totals[p.id].commercial+totals[p.id].guild+p.military+totals[p.id].scientific+Math.floor(totals[p.id].scoringCoins/3)}</strong></td>)}</tr>
     </tbody></table></div></section>;
 }
+function normalizeCardText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().split(/\s+/).filter(Boolean);
+}
+function textSimilarity(a: string, b: string) {
+  const row = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let diagonal = row[0];
+    row[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const above = row[j];
+      row[j] = Math.min(row[j] + 1, row[j - 1] + 1, diagonal + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diagonal = above;
+    }
+  }
+  return 1 - row[b.length] / Math.max(a.length, b.length, 1);
+}
+function rankCardMatches(text: string) {
+  const words = normalizeCardText(text);
+  return cardCatalog.map((card) => {
+    const nameWords = normalizeCardText(card.name);
+    const target = nameWords.join("");
+    let best = 0;
+    const lengths = new Set([Math.max(1, nameWords.length - 1), nameWords.length, nameWords.length + 1]);
+    for (const length of lengths) {
+      for (let start = 0; start + length <= words.length; start++) {
+        const chunk = words.slice(start, start + length).join("");
+        best = Math.max(best, textSimilarity(target, chunk));
+      }
+    }
+    return { card, confidence: best };
+  }).sort((a, b) => b.confidence - a.confidence || a.card.name.localeCompare(b.card.name)).slice(0, 8);
+}
+function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey: string; onAdd: (cards: Card[]) => void }) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [rows, setRows] = useState<Array<{ text: string; matches: ReturnType<typeof rankCardMatches>; cardId: string }>>([]);
+  const [recognizedText, setRecognizedText] = useState("");
+  useEffect(() => () => { if (imageUrl) URL.revokeObjectURL(imageUrl); }, [imageUrl]);
+  async function scan(file?: File) {
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+    setRows([]);
+    setRecognizedText("");
+    setBusy(true);
+    setStatus(apiKey ? "Sending photo to OCR.space…" : "Loading the on-device OCR engine…");
+    let worker: Awaited<ReturnType<typeof import("tesseract.js").createWorker>> | undefined;
+    try {
+      let text = "";
+      if (apiKey.trim()) {
+        const body = new FormData(); body.append("apikey", apiKey.trim()); body.append("language", "eng"); body.append("isOverlayRequired", "true"); body.append("OCREngine", "2"); body.append("file", file);
+        const response = await fetch("https://api.ocr.space/parse/image", { method: "POST", body });
+        if (!response.ok) throw new Error(`OCR.space returned HTTP ${response.status}`);
+        const result = await response.json() as { IsErroredOnProcessing?: boolean; ErrorMessage?: string[] | string; ParsedResults?: Array<{ ParsedText?: string; TextOverlay?: { Lines?: Array<{ LineText?: string }> } }> };
+        if (result.IsErroredOnProcessing) throw new Error(Array.isArray(result.ErrorMessage) ? result.ErrorMessage.join("; ") : result.ErrorMessage || "OCR.space could not read the image");
+        const parsed = result.ParsedResults?.[0];
+        if (!parsed) throw new Error("OCR.space returned no text results");
+        text = parsed.ParsedText?.trim() ?? "";
+        const overlayLines = parsed.TextOverlay?.Lines?.map((line) => line.LineText?.trim() ?? "").filter(Boolean) ?? [];
+        const lines = overlayLines.length ? overlayLines : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        setRecognizedText(text);
+        setRowsForScan(lines, text);
+      } else {
+        const { createWorker } = await import("tesseract.js");
+        worker = await createWorker("eng", undefined, { logger: (message) => {
+          const percent = Math.round(message.progress * 100);
+          setStatus(`${message.status.replace(/\b\w/g, (letter) => letter.toUpperCase())}${message.progress ? ` · ${percent}%` : "…"}`);
+        } });
+        const { data } = await worker.recognize(url, { rotateAuto: true });
+        text = data.text.trim(); setRecognizedText(text);
+        setRowsForScan(text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean), text);
+      }
+    } catch (error) {
+      setStatus(`Could not scan this photo: ${error instanceof Error ? error.message : "OCR failed"}`);
+    } finally {
+      await worker?.terminate().catch(() => undefined);
+      setBusy(false);
+    }
+  }
+  function setRowsForScan(lines: string[], text: string) {
+      const candidates = lines.filter((line) => line.length >= 4);
+      const found = candidates.map((line) => {
+        const matches = rankCardMatches(line).slice(0, 5);
+        const best = matches[0];
+        return { text: line, matches, cardId: best && best.confidence >= 0.62 ? best.card.id : "" };
+      }).filter((row) => row.matches.length && row.matches[0].confidence >= 0.28);
+      const deduped = found.filter((row, index) => found.findIndex((other) => other.matches[0]?.card.id === row.matches[0]?.card.id) === index).slice(0, 15);
+      setRows(deduped);
+      setStatus(deduped.length ? `Review the possible cards found for ${playerName}. Select the cards you want to add.` : text ? "No clear card names found. Try a closer, sharper photo with card names facing the camera." : "No text found. Try a closer, sharper photo.");
+  }
+  const updateRow = (index: number, key: "cardId", value: string) => setRows((current) => current.map((row, i) => i === index ? { ...row, [key]: value } : row));
+  const addSelected = () => { const cards = rows.filter((row) => row.cardId).map((row) => cardCatalog.find((card) => card.id === row.cardId)).filter((card): card is Card => !!card); if (!cards.length) return; onAdd(cards); setStatus(`Added ${cards.length} card${cards.length === 1 ? "" : "s"} for ${playerName}.`); setRows([]); setRecognizedText(""); setImageUrl(""); };
+  return <div className="card-scanner"><input ref={fileRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label={`Take or choose a photo of ${playerName}'s cards`} onChange={(e) => { void scan(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }}/><button type="button" className="scan-card-button" disabled={busy} onClick={() => fileRef.current?.click()}>{apiKey.trim() ? "Scan cards with OCR.space" : "Scan player’s cards"}</button><small className="scan-privacy">Photograph one player’s laid-out cards with names facing up. Without a key, scanning stays on this device and downloads the OCR engine.</small>{status && <div className="scan-result" aria-live="polite">{imageUrl && <img className="scan-preview" src={imageUrl} alt="Cards photo preview"/>}<div className="scan-result-content"><p>{status}</p>{rows.length > 0 && <><div className="scan-batch-list">{rows.map((row, index) => <label className="scan-batch-row" key={`${row.text}-${index}`}><input type="checkbox" checked={!!row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.checked ? row.matches[0]?.card.id ?? "" : "")}/><span className="scan-ocr-text">{row.text}</span><select aria-label={`${playerName}: Match for detected text ${row.text}`} value={row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.value)}><option value="">Skip</option>{row.matches.map(({ card, confidence }) => <option key={card.id} value={card.id}>{card.name} · {Math.round(confidence * 100)}%</option>)}<optgroup label="All cards">{cardCatalog.filter((card) => !row.matches.some((match) => match.card.id === card.id)).map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}</optgroup></select></label>)}</div><button type="button" className="primary" disabled={!rows.some((row) => row.cardId)} onClick={addSelected}>Add {rows.filter((row) => row.cardId).length} selected cards</button></>}{recognizedText && <details><summary>See detected text</summary><pre>{recognizedText}</pre></details>}</div></div>}</div>;
+}
 function App() {
   const [state, setState] = useState<State>(initial.state);
   const [warning, setWarning] = useState(initial.warning);
@@ -353,12 +455,19 @@ function App() {
   });
   const [count, setCount] = useState(3);
   const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
+  const [ocrKey, setOcrKey] = useState(() => { try { return localStorage.getItem(`${STORAGE}-ocrspace-key`) ?? ""; } catch { return ""; } });
+  const [clockNow, setClockNow] = useState(Date.now());
   const [selected, setSelected] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{
     title: string;
     text: string;
     action: () => void;
   } | null>(null);
+  useEffect(() => {
+    if (!state.active) return;
+    const timer = window.setInterval(() => setClockNow(Date.now()), 30_000);
+    return () => window.clearInterval(timer);
+  }, [Boolean(state.active)]);
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE, JSON.stringify(state));
@@ -378,12 +487,12 @@ function App() {
   const active = state.active;
   const automatic = active ? cardTotals(active) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number; automatic:number }> : {};
   function start(players = Array.from({ length: count }, (_, i) => player(i))) {
-    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players } }));
+    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), startedAt: new Date().toISOString(), players } }));
     setTab("Scoreboard");
   }
   function startCardMode() {
     const players = Array.from({ length: count }, (_, i) => player(i));
-    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), players, mode: "cards", seats: players.map((p) => p.id), cards: {}, wonderStages: {} } }));
+    setState((s) => ({ ...s, active: { id: crypto.randomUUID(), startedAt: new Date().toISOString(), players, mode: "cards", seats: players.map((p) => p.id), cards: {}, wonderStages: {} } }));
     setTab("Cards");
   }
   function update(id: string, patch: Partial<Player>) {
@@ -638,6 +747,7 @@ function App() {
                     <span className="status-dot" /> Game in progress{" "}
                     <span className="muted">
                       · {active.players.length} players
+                      {active.startedAt && <> · Started {new Date(active.startedAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})} · {formatMatchDuration(clockNow-Date.parse(active.startedAt))} elapsed</>}
                     </span>
                   </div>
                   <div className="toolbar-actions">
@@ -940,9 +1050,10 @@ function App() {
           <>
             <div className="page-heading"><div><span className="eyebrow">Card based scoring</span><h1>Count the city.</h1><p>Select built cards; adjacent seating powers guild and neighbor effects.</p></div><span className="edition">BASE GAME · 2ND EDITION</span></div>
             <div className="toolbar"><div>Seating order is clockwise, wrapping at the ends.</div></div>
-            <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
+            <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">· {active.players.length} players{active.startedAt && <> · Started {new Date(active.startedAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})} · {formatMatchDuration(clockNow-Date.parse(active.startedAt))} elapsed</>}</span></div><div className="toolbar-actions"><button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
             <section className="panel cards-panel seating-panel"><div className="seating-heading"><div><h2>Player positions</h2><p>Guilds count the players immediately beside you. Positions wrap around the table.</p></div><span className="clockwise">Clockwise ↓</span></div><div className="seat-grid">{(active.seats??active.players.map(p=>p.id)).map((id,i)=>{const seatIds=active.seats??active.players.map(p=>p.id);const seated=active.players.find(p=>p.id===id)!;const left=active.players.find(p=>p.id===seatIds[(i+seatIds.length-1)%seatIds.length])!;const right=active.players.find(p=>p.id===seatIds[(i+1)%seatIds.length])!;return <article className="seat-position" key={`seat-${i}`}><label>Seat {i+1}<select aria-label={`Player in seat ${i+1}`} value={id} onChange={e=>swapSeat(i,e.target.value)}>{active.players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="seat-player" style={{borderColor:seated.color}}><PlayerMark p={seated}/><input className="position-name-input" aria-label={`Name for ${seated.name}`} maxLength={30} value={seated.name} onChange={e=>update(seated.id,{name:e.target.value})} onBlur={()=>{if(!seated.name.trim())update(seated.id,{name:`Player ${active.players.indexOf(seated)+1}`})}}/></div><div className="seat-neighbors"><span title="Player to the left">← {left.name}</span><span title="Player to the right">{right.name} →</span></div></article>})}</div></section>
-            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className={`panel cards-panel player-order-card ${draggedPlayerId && draggedPlayerId!==p.id ? "player-order-target" : ""}`} key={p.id} style={{borderTop:`3px solid ${p.color}`}} onDragOver={e=>{if(draggedPlayerId){e.preventDefault();e.dataTransfer.dropEffect="move"}}} onDrop={e=>{e.preventDefault();reorderPlayer(p.id)}}><h2>{p.name}<span className="player-drag-handle" draggable aria-label={`Drag ${p.name} to change view order`} title="Drag to change view order" onDragStart={e=>{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",p.id);setDraggedPlayerId(p.id)}} onDragEnd={()=>setDraggedPlayerId(null)}>{"\u28FF"}</span></h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label className="mobile-card-picker">Card<select id={`card-${p.id}`} multiple size={6} aria-label={`${p.name}: Select cards`}>{types.map(type=><optgroup key={type} label={type}>{cardCatalog.filter(c=>c.color===type).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><details className="desktop-card-picker"><summary>Select cards</summary><div className="card-picker-popup"><input className="card-picker-search" type="search" placeholder="Search cards" aria-label={`${p.name}: Search cards`} onInput={e=>{const q=e.currentTarget.value.toLowerCase();e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(".card-picker-option").forEach(row=>row.hidden=!row.dataset.name?.includes(q))}}/>{types.map(type=><div className="card-picker-group" key={type}><strong>{type}</strong>{cardCatalog.filter(c=>c.color===type).map(c=><label className="card-picker-option" data-name={c.name.toLowerCase()} key={c.id}><input type="checkbox" value={c.id}/>{c.name}</label>)}</div>)}</div></details><button onClick={e=>{const root=e.currentTarget.closest(".card-add")!;const mobile=root.querySelector(`#card-${p.id}`) as HTMLSelectElement;const ids=Array.from(mobile.selectedOptions).map(o=>o.value);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]:checked").forEach(box=>ids.push(box.value));const cards=Array.from(new Set(ids)).map(id=>cardCatalog.find(c=>c.id===id)).filter((c):c is Card=>!!c);if(cards.length)setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),...cards]}}:null}));Array.from(mobile.options).forEach(o=>o.selected=false);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]").forEach(box=>box.checked=false);const popup=root.querySelector("details");if(popup)popup.open=false}}>Add cards</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
+            <section className="panel ocr-settings"><label>OCR.space API key<input type="password" autoComplete="off" spellCheck={false} placeholder="Optional — leave blank for local OCR" value={ocrKey} onChange={e=>{const value=e.target.value;setOcrKey(value);try{localStorage.setItem(`${STORAGE}-ocrspace-key`,value)}catch{}}}/></label><small>Saved only in this browser. Scans using the key are sent to OCR.space.</small></section>
+            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const colorOrder=["brown","gray","red","blue","green","yellow","purple"];const orderColor=(color:string)=>colorOrder.indexOf(color);const orderedSelected=selectedCards.map((card,index)=>({card,index})).sort((a,b)=>orderColor(a.card.color)-orderColor(b.card.color)||a.card.name.localeCompare(b.card.name));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=colorOrder.filter(color=>cardCatalog.some(card=>card.color===color));return <section className={`panel cards-panel player-order-card ${draggedPlayerId && draggedPlayerId!==p.id ? "player-order-target" : ""}`} key={p.id} style={{borderTop:`3px solid ${p.color}`}} onDragOver={e=>{if(draggedPlayerId){e.preventDefault();e.dataTransfer.dropEffect="move"}}} onDrop={e=>{e.preventDefault();reorderPlayer(p.id)}}><h2>{p.name}<span className="player-drag-handle" draggable aria-label={`Drag ${p.name} to change view order`} title="Drag to change view order" onDragStart={e=>{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",p.id);setDraggedPlayerId(p.id)}} onDragEnd={()=>setDraggedPlayerId(null)}>{"\u28FF"}</span></h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label className="mobile-card-picker">Card<select id={`card-${p.id}`} multiple size={6} aria-label={`${p.name}: Select cards`}>{types.map(type=><optgroup key={type} label={type}>{cardCatalog.filter(c=>c.color===type).sort((a,b)=>a.name.localeCompare(b.name)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><details className="desktop-card-picker"><summary>Select cards</summary><div className="card-picker-popup"><input className="card-picker-search" type="search" placeholder="Search cards" aria-label={`${p.name}: Search cards`} onInput={e=>{const q=e.currentTarget.value.toLowerCase();e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(".card-picker-option").forEach(row=>row.hidden=!row.dataset.name?.includes(q))}}/>{types.map(type=><div className="card-picker-group" key={type}><strong>{type}</strong>{cardCatalog.filter(c=>c.color===type).sort((a,b)=>a.name.localeCompare(b.name)).map(c=><label className="card-picker-option" data-name={c.name.toLowerCase()} key={c.id}><input type="checkbox" value={c.id}/>{c.name}</label>)}</div>)}</div></details><button onClick={e=>{const root=e.currentTarget.closest(".card-add")!;const mobile=root.querySelector(`#card-${p.id}`) as HTMLSelectElement;const ids=Array.from(mobile.selectedOptions).map(o=>o.value);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]:checked").forEach(box=>ids.push(box.value));const cards=Array.from(new Set(ids)).map(id=>cardCatalog.find(c=>c.id===id)).filter((c):c is Card=>!!c);if(cards.length)setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),...cards]}}:null}));Array.from(mobile.options).forEach(o=>o.selected=false);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]").forEach(box=>box.checked=false);const popup=root.querySelector("details");if(popup)popup.open=false}}>Add cards</button></div><CardScanner playerName={p.name} apiKey={ocrKey} onAdd={cards=>setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),...cards]}}:null}))}/><ul className="selected-cards">{orderedSelected.map(({card:c,index:i})=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
             <CardModeScoreboard game={active} update={update}/>
           </>
         )}
@@ -1021,7 +1132,7 @@ function App() {
                           <span className="report-brand">SEVEN WONDERS · TABLE REPORT</span>
                           <span className="eyebrow">THE FINAL STANDINGS</span>
                           <h2>A civilization well built.</h2>
-                          <p className="report-meta">{new Date(game.completedAt!).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })} · {game.players.length} players</p>
+                          <p className="report-meta">{new Date(game.completedAt!).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })} · {game.players.length} players{game.startedAt && <> · Started {new Date(game.startedAt).toLocaleTimeString(undefined,{hour:"2-digit",minute:"2-digit"})} · Match length {formatMatchDuration(Date.parse(game.completedAt!)-Date.parse(game.startedAt))}</>}</p>
                         </div>
                         <span className="muted small">
                           {new Date(game.completedAt!).toLocaleTimeString(
