@@ -66,10 +66,10 @@ export type State = { version: 2; active: Game | null; history: Game[] };
 export const cardCatalog: Card[] = [
   ...[["Lumber Yard",1,"brown"],["Stone Pit",1,"brown"],["Clay Pool",1,"brown"],["Ore Vein",1,"brown"],["Tree Farm",1,"brown"],["Excavation",1,"brown"],["Clay Pit",1,"brown"],["Timber Yard",1,"brown"],["Forest Cave",1,"brown"],["Loom",1,"gray"],["Glassworks",1,"gray"],["Press",1,"gray"]].map(([name,age,color])=>({id:String(name),name:String(name),age:Number(age) as 1,color:String(color)})),
   ...[["Sawmill",2,"brown"],["Quarry",2,"brown"],["Brickyard",2,"brown"],["Foundry",2,"brown"],["Loom",2,"gray"],["Glassworks",2,"gray"],["Press",2,"gray"]].map(([name,age,color])=>({id:`${name}-${age}`,name:String(name),age:Number(age) as 2,color:String(color)})),
-  ...[["Baths",1,3],["Altar",1,3],["Theater",1,3],["Statue",2,4],["Aqueduct",2,5],["Temple",2,4],["Courthouse",2,4],["Pantheon",3,7],["Gardens",3,5],["Town Hall",3,6],["Palace",3,8],["Senate",3,6]].map(([name,age,points])=>({id:String(name),name:String(name),age:Number(age) as 1|2|3,color:"blue",points:Number(points)})),
+  ...[["Baths",1,3],["Altar",1,3],["Theater",1,3],["Pawnshop",1,3],["Statue",2,4],["Aqueduct",2,5],["Temple",2,4],["Courthouse",2,4],["Well",2,3],["Pantheon",3,7],["Gardens",3,5],["Town Hall",3,6],["Palace",3,8],["Senate",3,6]].map(([name,age,points])=>({id:String(name),name:String(name),age:Number(age) as 1|2|3,color:"blue",points:Number(points)})),
   ...[["Stockade",1,1],["Barracks",1,1],["Guard Tower",1,1],["Stables",2,2],["Archery Range",2,2],["Training Ground",2,2],["Walls",2,2],["Horse Breeders",2,2],["Castrum",3,3],["Fortifications",3,3],["Circus",3,3],["Arsenal",3,3],["Siege Workshop",3,3]].map(([name,age,shields])=>({id:String(name),name:String(name),age:Number(age) as 1|2|3,color:"red",shields:Number(shields)})),
   ...[["Apothecary",1,"compass"],["Workshop",1,"gear"],["Scriptorium",1,"tablet"],["Dispensary",2,"compass"],["Laboratory",2,"gear"],["Library",2,"tablet"],["School",2,"tablet"],["Lodge",3,"compass"],["Academy",3,"compass"],["Observatory",3,"gear"],["Study",3,"gear"],["University",3,"tablet"]].map(([name,age,science])=>({id:String(name),name:String(name),age:Number(age) as 1|2|3,color:"green",science:String(science) as Card["science"]})),
-  {id:"Tavern",name:"Tavern",age:1,color:"yellow",effect:"coins3"},{id:"Vineyard",name:"Vineyard",age:2,color:"yellow",effect:"coinsAllBrown"},{id:"Bazar",name:"Bazar",age:2,color:"yellow",effect:"coinsAllGray"},
+  {id:"Tavern",name:"Tavern",age:1,color:"yellow",effect:"coins3"},{id:"East Trading Post",name:"East Trading Post",age:1,color:"yellow"},{id:"West Trading Post",name:"West Trading Post",age:1,color:"yellow"},{id:"Marketplace",name:"Marketplace",age:1,color:"yellow"},{id:"Vineyard",name:"Vineyard",age:2,color:"yellow",effect:"coinsAllBrown"},{id:"Bazar",name:"Bazar",age:2,color:"yellow",effect:"coinsAllGray"},{id:"Forum",name:"Forum",age:2,color:"yellow"},{id:"Caravansery",name:"Caravansery",age:2,color:"yellow"},
   ...[["Lighthouse", "vpYellow"],["Haven","vpBrown"],["Chamber of Commerce","vpGray"],["Ludus","vpRed"],["Arena","vpStages"]].map(([name,effect])=>({id:name,name,age:3 as const,color:"yellow",effect:effect as Card["effect"]})),
   ...[["Workers Guild","guildBrown"],["Craftsmens Guild","guildGray"],["Magistrates Guild","guildBlue"],["Traders Guild","guildYellow"],["Builders Guild","guildStages"],["Spies Guild","guildRed"],["Philosophers Guild","guildGreen"],["Decorators Guild","guildAllStages"],["Scientists Guild","guildChoiceScience"],["Shipowners Guild","guildShipowner"]].map(([name,effect])=>({id:name,name,age:3 as const,color:"purple",effect:effect as Card["effect"]})),
 ];
@@ -136,7 +136,7 @@ export function cardTotals(game: Game) {
     const wonder = hasStageCount
       ? computedWonder
       : { ...computedWonder, points: p.wonder, shields: 0, wildcards: game.wonderScience?.[p.id] ? 1 : 0 };
-    let civilian = 0, commercial = 0, guild = 0, military = 0, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards + wonder.wildcards, coins = p.coins + wonder.coins;
+    let civilian = 0, commercial = 0, guild = 0, military = 0, compass = p.compass, tablet = p.tablet, gear = p.gear, wildcards = p.wildcards + wonder.wildcards, coins = p.coins;
     own.forEach(c => {
       if (c.points) civilian += c.points;
       if (c.shields) military += c.shields;
@@ -145,9 +145,9 @@ export function cardTotals(game: Game) {
       if (c.science === "gear") gear++;
       if (c.science === "wildcards") wildcards++;
       switch (c.effect) {
-        case "coins3": coins += 5; break;
-        case "coinsAllBrown": coins += own.filter(x=>x.color==="brown").length + near.filter(x=>x.color==="brown").length; break;
-        case "coinsAllGray": coins += own.filter(x=>x.color==="gray").length + near.filter(x=>x.color==="gray").length; break;
+        case "coins3":
+        case "coinsAllBrown":
+        case "coinsAllGray": break;
         case "vpYellow": commercial += own.filter(x=>x.color==="yellow").length; break;
         case "vpBrown": commercial += own.filter(x=>x.color==="brown").length; break;
         case "vpGray": commercial += 2*own.filter(x=>x.color==="gray").length; break;
@@ -167,8 +167,7 @@ export function cardTotals(game: Game) {
       }
     });
     const scientific = science(compass, tablet, gear, wildcards).points;
-    const excludedWonderCoins = hasStageCount && p.city === "Ephesus" && p.side === "Day" ? wonder.coins : 0;
-    const scoringCoins = coins - excludedWonderCoins;
+    const scoringCoins = coins;
     const automatic = wonder.points + civilian + commercial + guild + p.military + scientific + Math.floor(scoringCoins / 3);
     return [p.id, { wonder: wonder.points, civilian, commercial, guild, military, compass, tablet, gear, wildcards, coins, scoringCoins, scientific, automatic }];
   }));

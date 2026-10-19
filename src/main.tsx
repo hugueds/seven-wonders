@@ -328,7 +328,7 @@ function CardModeScoreboard({ game, update }: { game: Game; update: (id: string,
   const totals = cardTotals(game) as Record<string, { wonder:number; civilian:number; commercial:number; guild:number; military:number; coins:number; scoringCoins:number; scientific:number; compass:number; tablet:number; gear:number; wildcards:number }>;
   return <section className="panel score-panel card-mode-score-panel" aria-label="Card mode scoreboard"><div className="table-scroll"><table className="score-table"><caption className="card-score-caption">Card mode scoreboard</caption><thead><tr><th className="category-heading"><span className="eyebrow">CARD MODE</span><h2>Build your legacy.</h2><p>Card and Wonder scoring effects update automatically.</p></th>{game.players.map(p=><th className="player-heading" key={p.id} style={{borderTopColor:p.color}}><PlayerMark p={p}/><span className="name-display">{p.name}</span><small className="selected-wonder">{p.city ? `${p.city} (${p.side})` : "Wonder not selected"}</small></th>)}</tr></thead><tbody>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#9a7946"}} aria-hidden="true">◆</span>Wonder<small>Calculated from built stages</small></th>{game.players.map(p=><td key={p.id}><span className="calculated">{game.wonderStages?.[p.id]??0} stages built</span><strong className="science-points">{totals[p.id].wonder} <small>points</small></strong></td>)}</tr>
-    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Card and Wonder bonus coins add automatically</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].scoringCoins/3)} points</small></td>)}</tr>
+    <tr><th scope="row"><span className="category-symbol" style={{color:"#ac852b"}} aria-hidden="true">●</span>Coins<small>Enter final coins manually, including bonuses</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={p.coins} label={`${p.name}: Coins`} onChange={n=>update(p.id,{coins:n})}/><small className="calculated">= {Math.floor(totals[p.id].scoringCoins/3)} points</small></td>)}</tr>
     <tr><th scope="row"><span className="category-symbol" style={{color:"#ae4d45"}} aria-hidden="true">✕</span>Military<small>Enter the final military score manually</small></th>{game.players.map(p=><td key={p.id}><small className="calculated">{totals[p.id].military} card shields (reference)</small><NumberInput value={p.military} min={-100} label={`${p.name}: Military points`} onChange={n=>update(p.id,{military:n})}/></td>)}</tr>
     {([["Civilian","civilian","#3d739f","▮"],["Commercial","commercial","#ab851e","●"]] as const).map(([label,key,color,symbol])=><tr key={key}><th scope="row"><span className="category-symbol" style={{color}} aria-hidden="true">{symbol}</span>{label}<small>From selected cards</small></th>{game.players.map(p=><td key={p.id}><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></td>)}</tr>)}
     <tr className="science-row"><th scope="row"><span className="category-symbol science-symbol" aria-hidden="true">✳</span>Science<small>Symbols from cards and Wonder</small></th>{game.players.map(p=><td key={p.id}><div className="science-inputs">{([["Compass","compass"],["Tablet","tablet"],["Gear","gear"],["Wild","wildcards"]] as const).map(([label,key])=><label key={key}><span>{label}</span><NumberInput value={totals[p.id][key]} label={`${p.name}: ${label}`} readOnly onChange={()=>{}}/></label>)}</div><strong className="science-points">{totals[p.id].scientific} <small>points</small></strong></td>)}</tr>
@@ -352,6 +352,7 @@ function App() {
     }
   });
   const [count, setCount] = useState(3);
+  const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [dialog, setDialog] = useState<{
     title: string;
@@ -449,6 +450,20 @@ function App() {
       [seats[position], seats[otherPosition]] = [seats[otherPosition], seats[position]];
       return { ...s, active: { ...s.active, seats } };
     });
+  }
+  function reorderPlayer(targetId: string) {
+    if (!draggedPlayerId || draggedPlayerId === targetId) return;
+    setState((s) => {
+      if (!s.active) return s;
+      const players = [...s.active.players];
+      const from = players.findIndex((p) => p.id === draggedPlayerId);
+      const to = players.findIndex((p) => p.id === targetId);
+      if (from < 0 || to < 0) return s;
+      const [moved] = players.splice(from, 1);
+      players.splice(to, 0, moved);
+      return { ...s, active: { ...s.active, players } };
+    });
+    setDraggedPlayerId(null);
   }
   function confirm(title: string, text: string, action: () => void) {
     setDialog({ title, text, action });
@@ -927,7 +942,7 @@ function App() {
             <div className="toolbar"><div>Seating order is clockwise, wrapping at the ends.</div></div>
             <div className="toolbar"><div><span className="status-dot"/> Game in progress <span className="muted">· {active.players.length} players</span></div><div className="toolbar-actions"><button onClick={randomizeWonders}>Randomize Wonders &amp; Sides</button><button onClick={()=>confirm("Start a new table?","This discards the unfinished game. Completed results stay in History.",()=>setState(s=>({...s,active:null})))}>New game</button><button className="primary" onClick={finish}>Finish game <span aria-hidden="true">→</span></button></div></div>
             <section className="panel cards-panel seating-panel"><div className="seating-heading"><div><h2>Player positions</h2><p>Guilds count the players immediately beside you. Positions wrap around the table.</p></div><span className="clockwise">Clockwise ↓</span></div><div className="seat-grid">{(active.seats??active.players.map(p=>p.id)).map((id,i)=>{const seatIds=active.seats??active.players.map(p=>p.id);const seated=active.players.find(p=>p.id===id)!;const left=active.players.find(p=>p.id===seatIds[(i+seatIds.length-1)%seatIds.length])!;const right=active.players.find(p=>p.id===seatIds[(i+1)%seatIds.length])!;return <article className="seat-position" key={`seat-${i}`}><label>Seat {i+1}<select aria-label={`Player in seat ${i+1}`} value={id} onChange={e=>swapSeat(i,e.target.value)}>{active.players.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label><div className="seat-player" style={{borderColor:seated.color}}><PlayerMark p={seated}/><input className="position-name-input" aria-label={`Name for ${seated.name}`} maxLength={30} value={seated.name} onChange={e=>update(seated.id,{name:e.target.value})} onBlur={()=>{if(!seated.name.trim())update(seated.id,{name:`Player ${active.players.indexOf(seated)+1}`})}}/></div><div className="seat-neighbors"><span title="Player to the left">← {left.name}</span><span title="Player to the right">{right.name} →</span></div></article>})}</div></section>
-            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const usedCardIds=new Set(Object.values(active.cards??{}).flat().map(card=>card.id));const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className="panel cards-panel" key={p.id} style={{borderTop:`3px solid ${p.color}`}}><h2>{p.name}</h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label>Card<select id={`card-${p.id}`} defaultValue=""><option value="" disabled>Select a card</option>{types.map(type=><optgroup key={type} label={{brown:"Brown · Raw materials",gray:"Gray · Manufactured goods",blue:"Blue · Civilian",red:"Red · Military",green:"Green · Science",yellow:"Yellow · Commercial",purple:"Purple · Guilds"}[type]??type}>{cardCatalog.filter(c=>c.color===type&&!usedCardIds.has(c.id)).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><button onClick={()=>{const card=cardCatalog.find(c=>c.id===(document.getElementById(`card-${p.id}`) as HTMLSelectElement).value);if(card&&!usedCardIds.has(card.id))setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),card]}}:null}))}}>Add card</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
+            <div className="card-player-grid">{active.players.map(p=>{const selectedCards=active.cards?.[p.id]??[];const totals=cardTotals(active)[p.id] as Record<string,number>;const types=[...new Set(cardCatalog.map(c=>c.color))];return <section className={`panel cards-panel player-order-card ${draggedPlayerId && draggedPlayerId!==p.id ? "player-order-target" : ""}`} key={p.id} style={{borderTop:`3px solid ${p.color}`}} onDragOver={e=>{if(draggedPlayerId){e.preventDefault();e.dataTransfer.dropEffect="move"}}} onDrop={e=>{e.preventDefault();reorderPlayer(p.id)}}><h2>{p.name}<span className="player-drag-handle" draggable aria-label={`Drag ${p.name} to change view order`} title="Drag to change view order" onDragStart={e=>{e.dataTransfer.effectAllowed="move";e.dataTransfer.setData("text/plain",p.id);setDraggedPlayerId(p.id)}} onDragEnd={()=>setDraggedPlayerId(null)}>{"\u28FF"}</span></h2><div className="card-wonder-setup"><label>Wonder<select aria-label={`${p.name}: Wonder`} value={p.city} onChange={e=>updateWonder(p.id,{city:e.target.value})}><option value="">Choose a Wonder</option>{wonders.map(w=><option key={w}>{w}</option>)}</select></label><label>Side<select aria-label={`${p.name}: Wonder side`} value={p.side} onChange={e=>updateWonder(p.id,{side:e.target.value as Player["side"]})}><option>Day</option><option>Night</option></select></label><label>Stages built<NumberInput value={active.wonderStages?.[p.id]??0} max={wonderStageLimit(p.city,p.side)} label={`${p.name}: Wonder stages built`} onChange={n=>updateStages(p.id,n)}/></label></div><div className="card-add"><label className="mobile-card-picker">Card<select id={`card-${p.id}`} multiple size={6} aria-label={`${p.name}: Select cards`}>{types.map(type=><optgroup key={type} label={type}>{cardCatalog.filter(c=>c.color===type).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</optgroup>)}</select></label><details className="desktop-card-picker"><summary>Select cards</summary><div className="card-picker-popup"><input className="card-picker-search" type="search" placeholder="Search cards" aria-label={`${p.name}: Search cards`} onInput={e=>{const q=e.currentTarget.value.toLowerCase();e.currentTarget.parentElement?.querySelectorAll<HTMLElement>(".card-picker-option").forEach(row=>row.hidden=!row.dataset.name?.includes(q))}}/>{types.map(type=><div className="card-picker-group" key={type}><strong>{type}</strong>{cardCatalog.filter(c=>c.color===type).map(c=><label className="card-picker-option" data-name={c.name.toLowerCase()} key={c.id}><input type="checkbox" value={c.id}/>{c.name}</label>)}</div>)}</div></details><button onClick={e=>{const root=e.currentTarget.closest(".card-add")!;const mobile=root.querySelector(`#card-${p.id}`) as HTMLSelectElement;const ids=Array.from(mobile.selectedOptions).map(o=>o.value);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]:checked").forEach(box=>ids.push(box.value));const cards=Array.from(new Set(ids)).map(id=>cardCatalog.find(c=>c.id===id)).filter((c):c is Card=>!!c);if(cards.length)setState(s=>({...s,active:s.active?{...s.active,mode:"cards",cards:{...s.active.cards,[p.id]:[...(s.active.cards?.[p.id]??[]),...cards]}}:null}));Array.from(mobile.options).forEach(o=>o.selected=false);root.querySelectorAll<HTMLInputElement>(".desktop-card-picker input[type=checkbox]").forEach(box=>box.checked=false);const popup=root.querySelector("details");if(popup)popup.open=false}}>Add cards</button></div><ul className="selected-cards">{selectedCards.map((c,i)=><li className={`selected-card ${c.color}`} key={`${c.id}-${i}`}><span>{c.name}</span><button aria-label={`Remove ${c.name}`} onClick={()=>setState(s=>({...s,active:s.active?{...s.active,cards:{...s.active.cards,[p.id]:(s.active.cards?.[p.id]??[]).filter((_,j)=>j!==i)}}:null}))}>×</button></li>)}</ul><div className="auto-scores">{[["Civilian",totals.civilian],["Coins",totals.coins],["Military shields",totals.military],["Commercial",totals.commercial],["Guilds",totals.guild],["Science",totals.scientific]].map(([label,n])=><span key={String(label)}>{label}<strong>{n}</strong></span>)}</div><small className="calculated card-science-count">Science symbols: {totals.compass} compass · {totals.tablet} tablet · {totals.gear} gear · {totals.wildcards} wild</small></section>})}</div>
             <CardModeScoreboard game={active} update={update}/>
           </>
         )}
@@ -1003,8 +1018,10 @@ function App() {
                     <section className="panel history-detail">
                       <div className="section-heading">
                         <div>
+                          <span className="report-brand">SEVEN WONDERS · TABLE REPORT</span>
                           <span className="eyebrow">THE FINAL STANDINGS</span>
                           <h2>A civilization well built.</h2>
+                          <p className="report-meta">{new Date(game.completedAt!).toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })} · {game.players.length} players</p>
                         </div>
                         <span className="muted small">
                           {new Date(game.completedAt!).toLocaleTimeString(
@@ -1015,7 +1032,23 @@ function App() {
                       </div>
                       <Results game={game} />
                       <Breakdown game={game} />
+                      {game.mode === "cards" && (
+                        <section className="report-card-choices">
+                          <h3>Cards played</h3>
+                          <div className="report-card-grid">
+                            {game.players.map((p) => (
+                              <div className="report-card-player" key={p.id}>
+                                <h4>{p.name}</h4>
+                                {(game.cards?.[p.id] ?? []).length ? (
+                                  <ul>{game.cards![p.id].map((card, i) => <li key={`${card.id}-${i}`}>{card.name}</li>)}</ul>
+                                ) : <small>No cards recorded</small>}
+                              </div>
+                            ))}
+                          </div>
+                        </section>
+                      )}
                       <div className="history-actions">
+                        <button className="print-report" onClick={() => window.print()}>Print report</button>
                         <button
                           className="danger-text"
                           onClick={() =>
