@@ -376,7 +376,8 @@ function rankCardMatches(text: string) {
 }
 async function prepareOcrImage(file: File): Promise<File> {
   const maxDimension = 1800;
-  const maxBytes = 1_500_000;
+  // OCR.space's free API documents a 1 MB file limit; leave room for multipart overhead.
+  const maxBytes = 900_000;
   if (!file.type.startsWith("image/")) return file;
   const bitmap = await createImageBitmap(file);
   try {
@@ -421,7 +422,7 @@ function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey
       let text = "";
       if (apiKey.trim()) {
         const uploadFile = await prepareOcrImage(file);
-        const body = new FormData(); body.append("apikey", apiKey.trim()); body.append("language", "eng"); body.append("isOverlayRequired", "true"); body.append("OCREngine", "2"); body.append("file", uploadFile);
+        const body = new FormData(); body.append("apikey", apiKey.trim()); body.append("language", "eng"); body.append("isOverlayRequired", "true"); body.append("OCREngine", "3"); body.append("file", uploadFile);
         const response = await fetch("https://api.ocr.space/parse/image", { method: "POST", body });
         if (!response.ok) throw new Error(response.status === 413 ? "The photo is still too large for OCR.space. Try taking a closer photo of just the cards." : `OCR.space returned HTTP ${response.status}`);
         const result = await response.json() as { IsErroredOnProcessing?: boolean; ErrorMessage?: string[] | string; ParsedResults?: Array<{ ParsedText?: string; TextOverlay?: { Lines?: Array<{ LineText?: string }> } }> };
