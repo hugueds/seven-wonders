@@ -374,6 +374,32 @@ function rankCardMatches(text: string) {
     return { card, confidence: best };
   }).sort((a, b) => b.confidence - a.confidence || a.card.name.localeCompare(b.card.name)).slice(0, 8);
 }
+async function prepareOcrImage(file: File): Promise<File> {
+  const maxDimension = 1800;
+  const maxBytes = 1_500_000;
+  if (!file.type.startsWith("image/")) return file;
+  const bitmap = await createImageBitmap(file);
+  try {
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
+    if (scale === 1 && file.size <= maxBytes) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+    canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+    const context = canvas.getContext("2d");
+    if (!context) throw new Error("Could not resize the photo in this browser");
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    let quality = 0.86;
+    let blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error("Could not compress the photo")), "image/jpeg", quality));
+    while (blob.size > maxBytes && quality > 0.5) {
+      quality -= 0.1;
+      blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob((result) => result ? resolve(result) : reject(new Error("Could not compress the photo")), "image/jpeg", quality));
+    }
+    const name = `${file.name.replace(/\.[^.]+$/, "") || "photo"}.jpg`;
+    return new File([blob], name, { type: "image/jpeg", lastModified: file.lastModified });
+  } finally {
+    bitmap.close();
+  }
+}
 function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey: string; onAdd: (cards: Card[]) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [imageUrl, setImageUrl] = useState("");
@@ -394,9 +420,10 @@ function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey
     try {
       let text = "";
       if (apiKey.trim()) {
-        const body = new FormData(); body.append("apikey", apiKey.trim()); body.append("language", "eng"); body.append("isOverlayRequired", "true"); body.append("OCREngine", "2"); body.append("file", file);
+        const uploadFile = await prepareOcrImage(file);
+        const body = new FormData(); body.append("apikey", apiKey.trim()); body.append("language", "eng"); body.append("isOverlayRequired", "true"); body.append("OCREngine", "2"); body.append("file", uploadFile);
         const response = await fetch("https://api.ocr.space/parse/image", { method: "POST", body });
-        if (!response.ok) throw new Error(`OCR.space returned HTTP ${response.status}`);
+        if (!response.ok) throw new Error(response.status === 413 ? "The photo is still too large for OCR.space. Try taking a closer photo of just the cards." : `OCR.space returned HTTP ${response.status}`);
         const result = await response.json() as { IsErroredOnProcessing?: boolean; ErrorMessage?: string[] | string; ParsedResults?: Array<{ ParsedText?: string; TextOverlay?: { Lines?: Array<{ LineText?: string }> } }> };
         if (result.IsErroredOnProcessing) throw new Error(Array.isArray(result.ErrorMessage) ? result.ErrorMessage.join("; ") : result.ErrorMessage || "OCR.space could not read the image");
         const parsed = result.ParsedResults?.[0];
@@ -405,7 +432,7 @@ function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey
         const overlayLines = parsed.TextOverlay?.Lines?.map((line) => line.LineText?.trim() ?? "").filter(Boolean) ?? [];
         const lines = overlayLines.length ? overlayLines : text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
         setRecognizedText(text);
-        setRowsForScan(lines, text);
+        setRowsForScan(lines, text, false);
       } else {
         const { createWorker } = await import("tesseract.js");
         worker = await createWorker("eng", undefined, { logger: (message) => {
@@ -414,7 +441,7 @@ function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey
         } });
         const { data } = await worker.recognize(url, { rotateAuto: true });
         text = data.text.trim(); setRecognizedText(text);
-        setRowsForScan(text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean), text);
+        setRowsForScan(text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean), text, true);
       }
     } catch (error) {
       setStatus(`Could not scan this photo: ${error instanceof Error ? error.message : "OCR failed"}`);
@@ -423,20 +450,22 @@ function CardScanner({ playerName, apiKey, onAdd }: { playerName: string; apiKey
       setBusy(false);
     }
   }
-  function setRowsForScan(lines: string[], text: string) {
+  function setRowsForScan(lines: string[], text: string, localOnly: boolean) {
       const candidates = lines.filter((line) => line.length >= 4);
       const found = candidates.map((line) => {
-        const matches = rankCardMatches(line).slice(0, 5);
+        const ranked = rankCardMatches(line);
+        const bestScore = ranked[0]?.confidence ?? 0;
+        const matches = (localOnly ? ranked.filter((match) => match.confidence >= Math.max(0.45, bestScore - 0.2)) : ranked).slice(0, 5);
         const best = matches[0];
         return { text: line, matches, cardId: best && best.confidence >= 0.62 ? best.card.id : "" };
-      }).filter((row) => row.matches.length && row.matches[0].confidence >= 0.28);
+      }).filter((row) => row.matches.length && row.matches[0].confidence >= (localOnly ? 0.62 : 0.28));
       const deduped = found.filter((row, index) => found.findIndex((other) => other.matches[0]?.card.id === row.matches[0]?.card.id) === index).slice(0, 15);
       setRows(deduped);
       setStatus(deduped.length ? `Review the possible cards found for ${playerName}. Select the cards you want to add.` : text ? "No clear card names found. Try a closer, sharper photo with card names facing the camera." : "No text found. Try a closer, sharper photo.");
   }
   const updateRow = (index: number, key: "cardId", value: string) => setRows((current) => current.map((row, i) => i === index ? { ...row, [key]: value } : row));
   const addSelected = () => { const cards = rows.filter((row) => row.cardId).map((row) => cardCatalog.find((card) => card.id === row.cardId)).filter((card): card is Card => !!card); if (!cards.length) return; onAdd(cards); setStatus(`Added ${cards.length} card${cards.length === 1 ? "" : "s"} for ${playerName}.`); setRows([]); setRecognizedText(""); setImageUrl(""); };
-  return <div className="card-scanner"><input ref={fileRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label={`Take or choose a photo of ${playerName}'s cards`} onChange={(e) => { void scan(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }}/><button type="button" className="scan-card-button" disabled={busy} onClick={() => fileRef.current?.click()}>{apiKey.trim() ? "Scan cards with OCR.space" : "Scan player’s cards"}</button><small className="scan-privacy">Photograph one player’s laid-out cards with names facing up. Without a key, scanning stays on this device and downloads the OCR engine.</small>{status && <div className="scan-result" aria-live="polite">{imageUrl && <img className="scan-preview" src={imageUrl} alt="Cards photo preview"/>}<div className="scan-result-content"><p>{status}</p>{rows.length > 0 && <><div className="scan-batch-list">{rows.map((row, index) => <label className="scan-batch-row" key={`${row.text}-${index}`}><input type="checkbox" checked={!!row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.checked ? row.matches[0]?.card.id ?? "" : "")}/><span className="scan-ocr-text">{row.text}</span><select aria-label={`${playerName}: Match for detected text ${row.text}`} value={row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.value)}><option value="">Skip</option>{row.matches.map(({ card, confidence }) => <option key={card.id} value={card.id}>{card.name} · {Math.round(confidence * 100)}%</option>)}<optgroup label="All cards">{cardCatalog.filter((card) => !row.matches.some((match) => match.card.id === card.id)).map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}</optgroup></select></label>)}</div><button type="button" className="primary" disabled={!rows.some((row) => row.cardId)} onClick={addSelected}>Add {rows.filter((row) => row.cardId).length} selected cards</button></>}{recognizedText && <details><summary>See detected text</summary><pre>{recognizedText}</pre></details>}</div></div>}</div>;
+  return <div className="card-scanner"><input ref={fileRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label={`Take or choose a photo of ${playerName}'s cards`} onChange={(e) => { void scan(e.currentTarget.files?.[0]); e.currentTarget.value = ""; }}/><button type="button" className="scan-card-button" disabled={busy} onClick={() => fileRef.current?.click()}>{apiKey.trim() ? "Scan cards with OCR.space" : "Scan player’s cards"}</button><small className="scan-privacy">Photograph one player’s laid-out cards with names facing up. Without a key, scanning stays on this device and downloads the OCR engine.</small>{status && <div className="scan-result" aria-live="polite">{imageUrl && <img className="scan-preview" src={imageUrl} alt="Cards photo preview"/>}<div className="scan-result-content"><p>{status}</p>{rows.length > 0 && <><div className="scan-batch-list">{rows.map((row, index) => <label className="scan-batch-row" key={`${row.text}-${index}`}><input type="checkbox" checked={!!row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.checked ? row.matches[0]?.card.id ?? "" : "")}/><span className="scan-ocr-text">{row.text}</span><select aria-label={`${playerName}: Match for detected text ${row.text}`} value={row.cardId} onChange={(e) => updateRow(index, "cardId", e.target.value)}><option value="">Skip</option>{row.matches.map(({ card, confidence }) => <option key={card.id} value={card.id}>{card.name} · {Math.round(confidence * 100)}%</option>)}{apiKey.trim() && <optgroup label="All cards">{cardCatalog.filter((card) => !row.matches.some((match) => match.card.id === card.id)).map((card) => <option key={card.id} value={card.id}>{card.name}</option>)}</optgroup>}</select></label>)}</div><button type="button" className="primary" disabled={!rows.some((row) => row.cardId)} onClick={addSelected}>Add {rows.filter((row) => row.cardId).length} selected cards</button></>}{recognizedText && <details><summary>See detected text</summary><pre>{recognizedText}</pre></details>}</div></div>}</div>;
 }
 function App() {
   const [state, setState] = useState<State>(initial.state);
